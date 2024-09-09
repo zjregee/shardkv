@@ -1,0 +1,5 @@
+{
+	"name": "shardkv",
+	"image": "mcr.microsoft.com/devcontainers/go:1-1.22-bookworm",
+	"postCreateCommand": "go env -w GO111MODULE=on && go env -w GOPROXY=https://goproxy.cn,direct && go mod tidy"
+}
