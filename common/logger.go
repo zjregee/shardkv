@@ -37,10 +37,10 @@ func (f *customFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	return f.Formatter.Format(entry)
 }
 
-var log *logrus.Logger
+var Log *logrus.Logger
 
 func init() {
-	log = logrus.New()
-	log.SetFormatter(newCustomFormatter())
-	log.SetLevel(ENABLE_LOG_LEVEL)
+	Log = logrus.New()
+	Log.SetFormatter(newCustomFormatter())
+	Log.SetLevel(ENABLE_LOG_LEVEL)
 }

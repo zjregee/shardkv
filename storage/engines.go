@@ -8,9 +8,10 @@ import (
 )
 
 const (
-	CFDefault string = "default"
-	CFWrite   string = "write"
-	CFLock    string = "lock"
+	CFDefault  string = "default"
+	CFWrite    string = "write"
+	CFLock     string = "lock"
+	CFMetadata string = "metadata"
 )
 
 var CFs [3]string = [3]string{CFDefault, CFWrite, CFLock}
@@ -66,6 +67,16 @@ type Engines struct {
 func NewEngines(kvDB *bbolt.DB, raftDB *bbolt.DB) *Engines {
 	engines := &Engines{kvDB, raftDB}
 	return engines
+}
+
+func (en *Engines) GetMetadata(key []byte) ([]byte, error) {
+	return en.GetFromKv(CFMetadata, key)
+}
+
+func (en *Engines) SetMetadata(key []byte, value []byte) error {
+	wb := &WriteBatch{}
+	wb.SetCF(CFMetadata, key, value)
+	return en.WriteToKv(wb)
 }
 
 func (en *Engines) GetFromKv(cf string, key []byte) ([]byte, error) {
@@ -138,4 +149,11 @@ func CreateEngine(dir, name string) *bbolt.DB {
 		panic(err)
 	}
 	return db
+}
+
+func createDirIfNotExists(dir string) error {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return os.MkdirAll(dir, 0755)
+	}
+	return nil
 }
