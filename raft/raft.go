@@ -23,12 +23,10 @@ const (
 	HEARTBEAT_TIMEOUT  = time.Millisecond * 400
 )
 
-type role string
-
 const (
-	LEADER     role = "LEADER"
-	FOLLOWER   role = "FOLLOWER"
-	CANDIDATES role = "CANDIDATES"
+	LEADER     = "LEADER"
+	FOLLOWER   = "FOLLOWER"
+	CANDIDATES = "CANDIDATES"
 )
 
 type ApplyMsg struct {
@@ -44,7 +42,7 @@ type ApplyMsg struct {
 
 type Raft struct {
 	mu                sync.Mutex
-	r                 role
+	r                 string
 	term              int32
 	votedTerm         int32
 	leaderIndex       int32
@@ -117,6 +115,12 @@ func (rf *Raft) Serve() {
 		panic(err)
 	}
 	go rf.run()
+}
+
+func (rf *Raft) GetState() (bool, int32) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return rf.r == LEADER, rf.leaderIndex
 }
 
 func (rf *Raft) killed() bool {
