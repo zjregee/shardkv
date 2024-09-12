@@ -49,6 +49,7 @@ type Server struct {
 	applyCh    chan raft.ApplyMsg
 	rf         *raft.Raft
 	me         int32
+	peers      []string
 	dead       int32
 	deadCh     chan struct{}
 	pb.UnimplementedKvServiceServer
@@ -63,6 +64,7 @@ func MakeServer(peers []string, me int32) *Server {
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.MakeRaft(peers, me, kv.applyCh)
 	kv.me = me
+	kv.peers = peers
 	kv.dead = 0
 	kv.deadCh = make(chan struct{})
 	return kv
@@ -150,12 +152,12 @@ func (kv *Server) submitOp(op Op) string {
 }
 
 func (kv *Server) applyOperation(op Op) {
-	_, ok := kv.notifyMap[op.Id]
-	if ok {
+	_, needNotify := kv.notifyMap[op.Id]
+	if needNotify {
 		value := OK
 		if op.Kind == "Get" {
-			_, ok = kv.data[op.Key]
-			if !ok {
+			_, exists := kv.data[op.Key]
+			if !exists {
 				value = ErrNoKey
 			} else {
 				value = kv.data[op.Key]
@@ -165,8 +167,15 @@ func (kv *Server) applyOperation(op Op) {
 			if !isInExecute {
 				if op.Value == "" {
 					delete(kv.data, op.Key)
-				} else {
+				} else if op.Kind == "SET" {
 					kv.data[op.Key] = op.Value
+				} else {
+					_, exists := kv.data[op.Key]
+					if !exists {
+						kv.data[op.Key] = op.Value
+					} else {
+						kv.data[op.Key] += op.Value
+					}
 				}
 				kv.executeMap[op.Id] = struct{}{}
 			} else {
@@ -183,8 +192,15 @@ func (kv *Server) applyOperation(op Op) {
 		if !isInExecute {
 			if op.Value == "" {
 				delete(kv.data, op.Key)
-			} else {
+			} else if op.Kind == "SET" {
 				kv.data[op.Key] = op.Value
+			} else {
+				_, exists := kv.data[op.Key]
+				if !exists {
+					kv.data[op.Key] = op.Value
+				} else {
+					kv.data[op.Key] += op.Value
+				}
 			}
 			kv.executeMap[op.Id] = struct{}{}
 		}

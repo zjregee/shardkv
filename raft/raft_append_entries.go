@@ -14,7 +14,7 @@ func (rf *Raft) HandleAppendEntries(_ context.Context, args *pb.AppendEntriesArg
 	defer rf.mu.Unlock()
 	defer func() {
 		c.Log.Tracef(
-			"[node %d] reply append entries to %d, leader_term=%d, leader_commit=%d, prev_log_index=%d, prev_log_term=%d, entries_num=%d, success=%t",
+			"[raft %d] reply append entries to %d, leader_term=%d leader_commit=%d prev_log_index=%d prev_log_term=%d entries_num=%d success=%t",
 			rf.me, args.LeaderIndex, args.LeaderTerm, args.LeaderCommit, args.PrevLogIndex, args.PrevLogTerm, len(args.Entries), reply.Success,
 		)
 	}()
@@ -24,11 +24,11 @@ func (rf *Raft) HandleAppendEntries(_ context.Context, args *pb.AppendEntriesArg
 		return
 	}
 	if rf.r != FOLLOWER {
-		c.Log.Infof("[node %d] role %s -> FOLLOWER", rf.me, rf.r)
+		c.Log.Infof("[raft %d] role %s -> FOLLOWER", rf.me, rf.r)
 		rf.r = FOLLOWER
 	}
 	if rf.term != args.LeaderTerm {
-		c.Log.Infof("[node %d] term %d -> %d", rf.me, rf.term, args.LeaderTerm)
+		c.Log.Infof("[raft %d] term %d -> %d", rf.me, rf.term, args.LeaderTerm)
 		rf.term = args.LeaderTerm
 	}
 	rf.votedTerm = args.LeaderTerm
@@ -58,7 +58,7 @@ func (rf *Raft) HandleAppendEntries(_ context.Context, args *pb.AppendEntriesArg
 		}
 	}
 	if args.LeaderCommit > rf.commitIndex {
-		c.Log.Infof("[node %d] commit index %d -> %d", rf.me, rf.commitIndex, args.LeaderCommit)
+		c.Log.Infof("[raft %d] commit index %d -> %d", rf.me, rf.commitIndex, args.LeaderCommit)
 		rf.commitIndex = args.LeaderCommit
 	}
 	return
@@ -118,7 +118,7 @@ func (rf *Raft) appendEntries() {
 			defer wg.Done()
 			reply, err := rf.callAppendEntriesWithTimeout(peer, args, RPC_TIMEOUT)
 			if err != nil {
-				c.Log.Errorf("[node %d] append entries to %d failed: %v", rf.me, peer, err)
+				c.Log.Errorf("[raft %d] append entries to %d failed: %v", rf.me, peer, err)
 				return
 			}
 			resultChan <- &appendEntriesReplyWithIndex{peer, int32(len(args.Entries)), reply}
@@ -135,7 +135,7 @@ func (rf *Raft) appendEntries() {
 			return
 		}
 		if !result.Reply.Success && result.Reply.Term > rf.term {
-			c.Log.Infof("[node %d] role LEADER -> FOLLOWER", rf.me)
+			c.Log.Infof("[raft %d] role LEADER -> FOLLOWER", rf.me)
 			rf.r = FOLLOWER
 			rf.votedTerm = result.Reply.Term
 			rf.leaderIndex = -1

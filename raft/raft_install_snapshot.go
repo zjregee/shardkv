@@ -14,7 +14,7 @@ func (rf *Raft) HandleInstallSnapshot(_ context.Context, args *pb.InstallSnapsho
 	defer rf.mu.Unlock()
 	defer func() {
 		c.Log.Tracef(
-			"[node %d] reply install snapshot to %d, leader_term=%d, snapshot_index=%d, snapshot_term=%d, success=%t",
+			"[raft %d] reply install snapshot to %d leader_term=%d snapshot_index=%d snapshot_term=%d success=%t",
 			rf.me, args.LeaderIndex, args.LeaderTerm, args.SnapshotIndex, args.SnapshotTerm, reply.Success,
 		)
 	}()
@@ -24,11 +24,11 @@ func (rf *Raft) HandleInstallSnapshot(_ context.Context, args *pb.InstallSnapsho
 		return
 	}
 	if rf.r != FOLLOWER {
-		c.Log.Infof("[node %d] role %s -> FOLLOWER", rf.me, rf.r)
+		c.Log.Infof("[raft %d] role %s -> FOLLOWER", rf.me, rf.r)
 		rf.r = FOLLOWER
 	}
 	if rf.term != args.LeaderTerm {
-		c.Log.Infof("[node %d] term %d -> %d", rf.me, rf.term, args.LeaderTerm)
+		c.Log.Infof("[raft %d] term %d -> %d", rf.me, rf.term, args.LeaderTerm)
 		rf.term = args.LeaderTerm
 	}
 	rf.votedTerm = args.LeaderTerm
@@ -39,7 +39,7 @@ func (rf *Raft) HandleInstallSnapshot(_ context.Context, args *pb.InstallSnapsho
 	if args.SnapshotIndex <= rf.appliedIndex {
 		return
 	}
-	c.Log.Infof("[node %d] snapshot index %d -> %d", rf.me, rf.appliedIndex, args.SnapshotIndex)
+	c.Log.Infof("[raft %d] snapshot index %d -> %d", rf.me, rf.appliedIndex, args.SnapshotIndex)
 	rf.snapshot = args.Snapshot
 	rf.snapshotTerm = args.SnapshotTerm
 	rf.snapshotIndex = args.SnapshotIndex
@@ -51,7 +51,7 @@ func (rf *Raft) HandleInstallSnapshot(_ context.Context, args *pb.InstallSnapsho
 		rf.log = rf.log[discard:]
 	}
 	if args.SnapshotIndex > rf.commitIndex {
-		c.Log.Infof("[node %d] commit index %d -> %d", rf.me, rf.commitIndex, args.SnapshotIndex)
+		c.Log.Infof("[raft %d] commit index %d -> %d", rf.me, rf.commitIndex, args.SnapshotIndex)
 		rf.commitIndex = args.SnapshotIndex
 	}
 	return
@@ -108,7 +108,7 @@ func (rf *Raft) installSnapshot() {
 			defer wg.Done()
 			reply, err := rf.callInstallSnapshotWithTimeout(peer, args, RPC_TIMEOUT)
 			if err != nil {
-				c.Log.Warnf("[node %d] install snapshot to node %d failed: %v", rf.me, peer, err)
+				c.Log.Warnf("[raft %d] install snapshot to %d failed: %v", rf.me, peer, err)
 				return
 			}
 			resultChan <- &installSnapshotReplyWithIndex{peer, args.SnapshotIndex, reply}
@@ -125,7 +125,7 @@ func (rf *Raft) installSnapshot() {
 			return
 		}
 		if !result.Reply.Success {
-			c.Log.Infof("[node %d] role LEADER -> FOLLOWER", rf.me)
+			c.Log.Infof("[raft %d] role LEADER -> FOLLOWER", rf.me)
 			rf.r = FOLLOWER
 			rf.votedTerm = result.Reply.Term
 			rf.leaderIndex = -1

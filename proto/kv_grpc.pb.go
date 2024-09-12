@@ -20,8 +20,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	KvService_HandleGet_FullMethodName = "/shardkv.KvService/HandleGet"
-	KvService_HandlePut_FullMethodName = "/shardkv.KvService/HandlePut"
+	KvService_HandleGet_FullMethodName         = "/shardkv.KvService/HandleGet"
+	KvService_HandleModify_FullMethodName      = "/shardkv.KvService/HandleModify"
+	KvService_HandleConfigQuery_FullMethodName = "/shardkv.KvService/HandleConfigQuery"
 )
 
 // KvServiceClient is the client API for KvService service.
@@ -29,7 +30,8 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type KvServiceClient interface {
 	HandleGet(ctx context.Context, in *GetArgs, opts ...grpc.CallOption) (*GetReply, error)
-	HandlePut(ctx context.Context, in *PutArgs, opts ...grpc.CallOption) (*PutReply, error)
+	HandleModify(ctx context.Context, in *ModifyArgs, opts ...grpc.CallOption) (*ModifyReply, error)
+	HandleConfigQuery(ctx context.Context, in *ConfigQueryArgs, opts ...grpc.CallOption) (*ConfigQueryReply, error)
 }
 
 type kvServiceClient struct {
@@ -50,10 +52,20 @@ func (c *kvServiceClient) HandleGet(ctx context.Context, in *GetArgs, opts ...gr
 	return out, nil
 }
 
-func (c *kvServiceClient) HandlePut(ctx context.Context, in *PutArgs, opts ...grpc.CallOption) (*PutReply, error) {
+func (c *kvServiceClient) HandleModify(ctx context.Context, in *ModifyArgs, opts ...grpc.CallOption) (*ModifyReply, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(PutReply)
-	err := c.cc.Invoke(ctx, KvService_HandlePut_FullMethodName, in, out, cOpts...)
+	out := new(ModifyReply)
+	err := c.cc.Invoke(ctx, KvService_HandleModify_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *kvServiceClient) HandleConfigQuery(ctx context.Context, in *ConfigQueryArgs, opts ...grpc.CallOption) (*ConfigQueryReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfigQueryReply)
+	err := c.cc.Invoke(ctx, KvService_HandleConfigQuery_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +77,8 @@ func (c *kvServiceClient) HandlePut(ctx context.Context, in *PutArgs, opts ...gr
 // for forward compatibility.
 type KvServiceServer interface {
 	HandleGet(context.Context, *GetArgs) (*GetReply, error)
-	HandlePut(context.Context, *PutArgs) (*PutReply, error)
+	HandleModify(context.Context, *ModifyArgs) (*ModifyReply, error)
+	HandleConfigQuery(context.Context, *ConfigQueryArgs) (*ConfigQueryReply, error)
 	mustEmbedUnimplementedKvServiceServer()
 }
 
@@ -79,8 +92,11 @@ type UnimplementedKvServiceServer struct{}
 func (UnimplementedKvServiceServer) HandleGet(context.Context, *GetArgs) (*GetReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HandleGet not implemented")
 }
-func (UnimplementedKvServiceServer) HandlePut(context.Context, *PutArgs) (*PutReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method HandlePut not implemented")
+func (UnimplementedKvServiceServer) HandleModify(context.Context, *ModifyArgs) (*ModifyReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HandleModify not implemented")
+}
+func (UnimplementedKvServiceServer) HandleConfigQuery(context.Context, *ConfigQueryArgs) (*ConfigQueryReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HandleConfigQuery not implemented")
 }
 func (UnimplementedKvServiceServer) mustEmbedUnimplementedKvServiceServer() {}
 func (UnimplementedKvServiceServer) testEmbeddedByValue()                   {}
@@ -121,20 +137,38 @@ func _KvService_HandleGet_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
-func _KvService_HandlePut_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(PutArgs)
+func _KvService_HandleModify_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModifyArgs)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(KvServiceServer).HandlePut(ctx, in)
+		return srv.(KvServiceServer).HandleModify(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: KvService_HandlePut_FullMethodName,
+		FullMethod: KvService_HandleModify_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(KvServiceServer).HandlePut(ctx, req.(*PutArgs))
+		return srv.(KvServiceServer).HandleModify(ctx, req.(*ModifyArgs))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _KvService_HandleConfigQuery_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfigQueryArgs)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KvServiceServer).HandleConfigQuery(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: KvService_HandleConfigQuery_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KvServiceServer).HandleConfigQuery(ctx, req.(*ConfigQueryArgs))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -151,8 +185,12 @@ var KvService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _KvService_HandleGet_Handler,
 		},
 		{
-			MethodName: "HandlePut",
-			Handler:    _KvService_HandlePut_Handler,
+			MethodName: "HandleModify",
+			Handler:    _KvService_HandleModify_Handler,
+		},
+		{
+			MethodName: "HandleConfigQuery",
+			Handler:    _KvService_HandleConfigQuery_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

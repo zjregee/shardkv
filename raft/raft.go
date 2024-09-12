@@ -186,7 +186,7 @@ func (rf *Raft) updateCommitIndex() {
 			}
 		}
 		if count > len(rf.peers)/2 {
-			c.Log.Infof("[node %d] commit index %d -> %d", rf.me, rf.commitIndex, i)
+			c.Log.Infof("[raft %d] commit index %d -> %d", rf.me, rf.commitIndex, i)
 			rf.commitIndex = i
 			return
 		}

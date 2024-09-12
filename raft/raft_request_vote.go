@@ -15,7 +15,7 @@ func (rf *Raft) HandleRequestVote(_ context.Context, args *pb.RequestVoteArgs) (
 	defer rf.mu.Unlock()
 	defer func() {
 		c.Log.Tracef(
-			"[node %d] reply request vote to %d, candidate_term=%d, last_log_index=%d, last_log_term=%d, success=%t",
+			"[raft %d] reply request vote to %d, candidate_term=%d last_log_index=%d last_log_term=%d success=%t",
 			rf.me, args.CandidateIndex, args.CandidateTerm, args.LastLogIndex, args.LastLogTerm, reply.Success,
 		)
 	}()
@@ -25,7 +25,7 @@ func (rf *Raft) HandleRequestVote(_ context.Context, args *pb.RequestVoteArgs) (
 		return
 	}
 	if rf.r != FOLLOWER {
-		c.Log.Infof("[node %d] role %s -> FOLLOWER", rf.me, rf.r)
+		c.Log.Infof("[raft %d] role %s -> FOLLOWER", rf.me, rf.r)
 		rf.r = FOLLOWER
 	}
 	rf.votedTerm = args.CandidateTerm
@@ -49,7 +49,7 @@ func (rf *Raft) requestVote() {
 		rf.mu.Unlock()
 		return
 	}
-	c.Log.Infof("[node %d] role FOLLOWER -> CANDIDATES", rf.me)
+	c.Log.Infof("[raft %d] role FOLLOWER -> CANDIDATES", rf.me)
 	rf.r = CANDIDATES
 	term := rf.term
 	rf.mu.Unlock()
@@ -61,7 +61,7 @@ func (rf *Raft) requestVote() {
 		}
 		c.Assert(term == rf.term, "term should be equal to rf.term")
 		rf.votedTerm += 1
-		c.Log.Infof("[node %d] start election, term %d", rf.me, rf.votedTerm)
+		c.Log.Infof("[raft %d] start election, term %d", rf.me, rf.votedTerm)
 		lastLogTerm, lastLogIndex := rf.getLogState()
 		args := &pb.RequestVoteArgs{
 			CandidateTerm:  rf.votedTerm,
@@ -81,7 +81,7 @@ func (rf *Raft) requestVote() {
 				defer wg.Done()
 				reply, err := rf.callRequestVoteWithTimeout(peer, args, RPC_TIMEOUT)
 				if err != nil {
-					c.Log.Warnf("[node %d] request vote from node %d error: %v", rf.me, peer, err)
+					c.Log.Warnf("[raft %d] request vote from %d error: %v", rf.me, peer, err)
 					return
 				}
 				resultChan <- reply
@@ -108,8 +108,8 @@ func (rf *Raft) requestVote() {
 		}
 		c.Assert(term == rf.term, "term should be equal to rf.term")
 		if successCount > len(rf.peers)/2 {
-			c.Log.Infof("[node %d] win the election, term %d", rf.me, rf.votedTerm)
-			c.Log.Infof("[node %d] role CANDIDATES -> LEADER", rf.me)
+			c.Log.Infof("[raft %d] win the election, term %d", rf.me, rf.votedTerm)
+			c.Log.Infof("[raft %d] role CANDIDATES -> LEADER", rf.me)
 			rf.r = LEADER
 			rf.term = rf.votedTerm
 			rf.leaderIndex = rf.me
