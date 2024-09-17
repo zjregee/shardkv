@@ -1,4 +1,4 @@
-package kv
+package server
 
 import (
 	"context"
@@ -7,9 +7,10 @@ import (
 	pb "github.com/zjregee/shardkv/proto"
 )
 
-func (kv *Server) HandleGet(_ context.Context, args *pb.GetArgs) (reply *pb.GetReply, err error) {
+func (kv *Server) HandleGet(_ context.Context, args *pb.GetArgs) (reply *pb.GetReply, nullErr error) {
+	reply = &pb.GetReply{}
 	defer func() {
-		c.Log.Tracef(
+		c.Log.Infof(
 			"[node %d] reply get request, id=%d key=%s, value=%s, err=%s",
 			kv.me, args.Id, args.Key, reply.Value, reply.Err,
 		)
@@ -30,20 +31,17 @@ func (kv *Server) HandleGet(_ context.Context, args *pb.GetArgs) (reply *pb.GetR
 		Kind: "GET",
 		Key:  args.Key,
 	}
-	result := kv.submitOp(op)
+	err, value := kv.submitOp(op)
 	kv.mu.Unlock()
-	if result == ErrClosed || result == ErrWrongLeader || result == ErrNoKey {
-		reply.Err = pb.Err_OK
-	} else {
-		reply.Err = pb.Err_OK
-		reply.Value = result
-	}
+	reply.Err = err
+	reply.Value = value
 	return
 }
 
-func (kv *Server) HandleModify(_ context.Context, args *pb.ModifyArgs) (reply *pb.ModifyReply, err error) {
+func (kv *Server) HandleModify(_ context.Context, args *pb.ModifyArgs) (reply *pb.ModifyReply, nullErr error) {
+	reply = &pb.ModifyReply{}
 	defer func() {
-		c.Log.Tracef(
+		c.Log.Infof(
 			"[node %d] reply modify request, id=%d kind=%s key=%s, value=%s, err=%s",
 			kv.me, args.Id, args.Kind, args.Key, args.Value, reply.Err,
 		)
@@ -65,15 +63,16 @@ func (kv *Server) HandleModify(_ context.Context, args *pb.ModifyArgs) (reply *p
 		Key:   args.Key,
 		Value: args.Value,
 	}
-	_ = kv.submitOp(op)
+	err, _ := kv.submitOp(op)
 	kv.mu.Unlock()
-	reply.Err = pb.Err_OK
+	reply.Err = err
 	return
 }
 
-func (kv *Server) HandleConfigQuery(_ context.Context, args *pb.ConfigQueryArgs) (reply *pb.ConfigQueryReply, err error) {
+func (kv *Server) HandleConfigQuery(_ context.Context, args *pb.ConfigQueryArgs) (reply *pb.ConfigQueryReply, nullErr error) {
+	reply = &pb.ConfigQueryReply{}
 	defer func() {
-		c.Log.Tracef(
+		c.Log.Infof(
 			"[node %d] reply config query request, id=%d peers=%v leader_index=%d err=%s",
 			kv.me, args.Id, reply.Peers, reply.LeaderIndex, reply.Err,
 		)

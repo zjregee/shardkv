@@ -1,10 +1,10 @@
-package kv
+package server
 
 import (
 	"bytes"
 	"encoding/gob"
+	"fmt"
 	"net"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,15 +15,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-const (
-	ENABLED_EXPIRED       = true
-	DEFAULT_KV_SERVE_PORT = 4520
-)
-
-const (
-	EXPIRED_TIMEOUT = time.Second * 1
-	METRICS_TIMEOUT = time.Millisecond * 20
-)
+const METRICS_TIMEOUT = time.Millisecond * 20
 
 const (
 	OK             = "OK"
@@ -40,72 +32,97 @@ type Op struct {
 	Value string
 }
 
+type Result struct {
+	Err   pb.Err
+	Value string
+}
+
 type Server struct {
 	mu         sync.Mutex
 	dataIndex  int32
 	data       map[string]string
-	notifyMap  map[int64]chan string
+	notifyMap  map[int64]chan Result
 	executeMap map[int64]struct{}
 	applyCh    chan raft.ApplyMsg
 	rf         *raft.Raft
 	me         int32
+	port       string
 	peers      []string
 	dead       int32
 	deadCh     chan struct{}
+	server     *grpc.Server
 	pb.UnimplementedKvServiceServer
 }
 
-func MakeServer(peers []string, me int32) *Server {
+func MakeServer(kv_peers, raft_peers []string, me int32) *Server {
 	kv := &Server{}
 	kv.dataIndex = 0
 	kv.data = make(map[string]string)
-	kv.notifyMap = make(map[int64]chan string)
+	kv.notifyMap = make(map[int64]chan Result)
 	kv.executeMap = make(map[int64]struct{})
 	kv.applyCh = make(chan raft.ApplyMsg)
-	kv.rf = raft.MakeRaft(peers, me, kv.applyCh)
+	kv.rf = raft.MakeRaft(raft_peers, me, kv.applyCh)
 	kv.me = me
-	kv.peers = peers
+	_, port, err := net.SplitHostPort(kv_peers[me])
+	if err != nil {
+		panic(err)
+	}
+	kv.port = port
+	kv.peers = kv_peers
 	kv.dead = 0
 	kv.deadCh = make(chan struct{})
+	kv.server = nil
 	return kv
 }
 
 func (kv *Server) Serve() {
-	listener, err := net.Listen("tcp", ":"+strconv.Itoa(DEFAULT_KV_SERVE_PORT))
+	kv.rf.Serve()
+	listener, err := net.Listen("tcp", ":"+kv.port)
 	if err != nil {
 		panic(err)
 	}
-	s := grpc.NewServer()
-	pb.RegisterKvServiceServer(s, kv)
-	err = s.Serve(listener)
-	if err != nil {
-		panic(err)
-	}
+	kv.server = grpc.NewServer()
+	pb.RegisterKvServiceServer(kv.server, kv)
+	go func() {
+		if err := kv.server.Serve(listener); err != nil {
+			panic(err)
+		}
+	}()
 	go kv.run()
 	go kv.leaderChangedLoop()
+}
+
+func (kv *Server) Kill() {
+	atomic.StoreInt32(&kv.dead, 1)
+	close(kv.deadCh)
+	if kv.server != nil {
+		kv.server.GracefulStop()
+		kv.server = nil
+	}
+	kv.rf.Kill()
+}
+
+func (kv *Server) state() (bool, int32) {
+	return kv.rf.State()
 }
 
 func (kv *Server) killed() bool {
 	return atomic.LoadInt32(&kv.dead) == 1
 }
 
-func (kv *Server) state() (bool, int32) {
-	return kv.rf.GetState()
-}
-
 func (kv *Server) run() {
+	var msg raft.ApplyMsg
 	for !kv.killed() {
-		var msg raft.ApplyMsg
 		select {
 		case msg = <-kv.applyCh:
 		case <-kv.deadCh:
 			return
 		}
-
 		kv.mu.Lock()
-		c.Assert(msg.CommandValid, "command should be valid")
-		c.Assert(msg.CommandIndex == kv.dataIndex+1, "command index should be valid")
+		c.Assert(msg.CommandValid, "commnadValid should be true")
+		c.Assert(msg.CommandIndex == kv.dataIndex+1, "commandIndex should be equal to dataIndex+1")
 		op := deserializeOp(msg.Command)
+		kv.recordOp(op)
 		kv.applyOperation(op)
 		kv.dataIndex = msg.CommandIndex
 		kv.mu.Unlock()
@@ -116,10 +133,12 @@ func (kv *Server) leaderChangedLoop() {
 	for !kv.killed() {
 		isLeader, _ := kv.state()
 		if !isLeader {
+			result := Result{}
+			result.Err = pb.Err_ErrWrongLeader
 			kv.mu.Lock()
 			for _, ch := range kv.notifyMap {
 				select {
-				case ch <- ErrWrongLeader:
+				case ch <- result:
 				default:
 				}
 			}
@@ -129,43 +148,23 @@ func (kv *Server) leaderChangedLoop() {
 	}
 }
 
-func (kv *Server) submitOp(op Op) string {
-	entry := serializeOp(op)
-	kv.rf.Start(entry)
-	ch := make(chan string)
-	kv.notifyMap[op.Id] = ch
-	kv.mu.Unlock()
-	var value string
-	dead := false
-	select {
-	case value = <-ch:
-	case <-kv.deadCh:
-		dead = true
-	}
-	kv.mu.Lock()
-	close(ch)
-	delete(kv.notifyMap, op.Id)
-	if dead {
-		return ErrClosed
-	}
-	return value
-}
-
 func (kv *Server) applyOperation(op Op) {
 	_, needNotify := kv.notifyMap[op.Id]
 	if needNotify {
-		value := OK
-		if op.Kind == "Get" {
+		result := Result{}
+		result.Err = pb.Err_OK
+		result.Value = ""
+		if op.Kind == "GET" {
 			_, exists := kv.data[op.Key]
 			if !exists {
-				value = ErrNoKey
+				result.Err = pb.Err_ErrNoKey
 			} else {
-				value = kv.data[op.Key]
+				result.Value = kv.data[op.Key]
 			}
 		} else {
 			_, isInExecute := kv.executeMap[op.Id]
 			if !isInExecute {
-				if op.Value == "" {
+				if op.Kind == "DEL" {
 					delete(kv.data, op.Key)
 				} else if op.Kind == "SET" {
 					kv.data[op.Key] = op.Value
@@ -179,18 +178,18 @@ func (kv *Server) applyOperation(op Op) {
 				}
 				kv.executeMap[op.Id] = struct{}{}
 			} else {
-				value = Duplicate
+				result.Err = pb.Err_Duplicate
 			}
 		}
 		ch := kv.notifyMap[op.Id]
 		select {
-		case ch <- value:
+		case ch <- result:
 		default:
 		}
 	} else if op.Kind != "Get" {
 		_, isInExecute := kv.executeMap[op.Id]
 		if !isInExecute {
-			if op.Value == "" {
+			if op.Kind == "DEL" {
 				delete(kv.data, op.Key)
 			} else if op.Kind == "SET" {
 				kv.data[op.Key] = op.Value
@@ -205,6 +204,38 @@ func (kv *Server) applyOperation(op Op) {
 			kv.executeMap[op.Id] = struct{}{}
 		}
 	}
+}
+
+func (kv *Server) submitOp(op Op) (pb.Err, string) {
+	entry := serializeOp(op)
+	kv.rf.Start(entry)
+	ch := make(chan Result)
+	kv.notifyMap[op.Id] = ch
+	kv.mu.Unlock()
+	var result Result
+	dead := false
+	select {
+	case result = <-ch:
+	case <-kv.deadCh:
+		dead = true
+	}
+	kv.mu.Lock()
+	close(ch)
+	delete(kv.notifyMap, op.Id)
+	if dead {
+		return pb.Err_ErrClosed, ""
+	}
+	return result.Err, result.Value
+}
+
+func (kv *Server) recordOp(op Op) {
+	var record string
+	if op.Kind == "GET" || op.Kind == "DEL" {
+		record = fmt.Sprintf("%s(id: %d, key: %s)", op.Kind, op.Id, op.Key)
+	} else {
+		record = fmt.Sprintf("%s(id: %d, key: %s, value: %s)", op.Kind, op.Id, op.Key, op.Value)
+	}
+	c.Log.Infof("[node %d] apply operation: %s", kv.me, record)
 }
 
 func serializeOp(op Op) []byte {

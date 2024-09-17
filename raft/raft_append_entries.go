@@ -9,7 +9,8 @@ import (
 	pb "github.com/zjregee/shardkv/proto"
 )
 
-func (rf *Raft) HandleAppendEntries(_ context.Context, args *pb.AppendEntriesArgs) (reply *pb.AppendEntriesReply, err error) {
+func (rf *Raft) HandleAppendEntries(_ context.Context, args *pb.AppendEntriesArgs) (reply *pb.AppendEntriesReply, nullErr error) {
+	reply = &pb.AppendEntriesReply{}
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	defer func() {
@@ -24,11 +25,11 @@ func (rf *Raft) HandleAppendEntries(_ context.Context, args *pb.AppendEntriesArg
 		return
 	}
 	if rf.r != FOLLOWER {
-		c.Log.Infof("[raft %d] role %s -> FOLLOWER", rf.me, rf.r)
+		c.Log.Tracef("[raft %d] role %s -> FOLLOWER", rf.me, rf.r)
 		rf.r = FOLLOWER
 	}
 	if rf.term != args.LeaderTerm {
-		c.Log.Infof("[raft %d] term %d -> %d", rf.me, rf.term, args.LeaderTerm)
+		c.Log.Tracef("[raft %d] term %d -> %d", rf.me, rf.term, args.LeaderTerm)
 		rf.term = args.LeaderTerm
 	}
 	rf.votedTerm = args.LeaderTerm
@@ -57,20 +58,22 @@ func (rf *Raft) HandleAppendEntries(_ context.Context, args *pb.AppendEntriesArg
 			rf.log[index-rf.snapshotIndex-1] = entry
 		}
 	}
+	lastLogIndex, _ = rf.getLogState()
+	c.Assert(lastLogIndex == args.PrevLogIndex+int32(len(args.Entries)), "lastLogIndex should be equal to prevLogIndex+len(entries)")
 	if args.LeaderCommit > rf.commitIndex {
-		c.Log.Infof("[raft %d] commit index %d -> %d", rf.me, rf.commitIndex, args.LeaderCommit)
+		c.Log.Tracef("[raft %d] commit index %d -> %d", rf.me, rf.commitIndex, args.LeaderCommit)
 		rf.commitIndex = args.LeaderCommit
 	}
 	return
 }
 
 type appendEntriesReplyWithIndex struct {
-	Index      int
+	Index      int32
 	EntriesNum int32
 	Reply      *pb.AppendEntriesReply
 }
 
-func (rf *Raft) callAppendEntriesWithTimeout(peer int, args *pb.AppendEntriesArgs, timeout time.Duration) (*pb.AppendEntriesReply, error) {
+func (rf *Raft) callAppendEntriesWithTimeout(peer int32, args *pb.AppendEntriesArgs, timeout time.Duration) (*pb.AppendEntriesReply, error) {
 	client := pb.NewRaftServiceClient(rf.peers[peer])
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -103,7 +106,7 @@ func (rf *Raft) appendEntries() {
 			rf.mu.Unlock()
 			continue
 		}
-		prevLogIndex, prevLogTerm, entries := rf.getAppendEntries(i)
+		prevLogIndex, prevLogTerm, entries := rf.getAppendEntries(int32(i))
 		args := &pb.AppendEntriesArgs{
 			LeaderTerm:   rf.term,
 			LeaderIndex:  rf.me,
@@ -114,7 +117,7 @@ func (rf *Raft) appendEntries() {
 		}
 		rf.mu.Unlock()
 		wg.Add(1)
-		go func(peer int, args *pb.AppendEntriesArgs) {
+		go func(peer int32, args *pb.AppendEntriesArgs) {
 			defer wg.Done()
 			reply, err := rf.callAppendEntriesWithTimeout(peer, args, RPC_TIMEOUT)
 			if err != nil {
@@ -122,7 +125,7 @@ func (rf *Raft) appendEntries() {
 				return
 			}
 			resultChan <- &appendEntriesReplyWithIndex{peer, int32(len(args.Entries)), reply}
-		}(i, args)
+		}(int32(i), args)
 	}
 	go func() {
 		wg.Wait()
@@ -135,7 +138,7 @@ func (rf *Raft) appendEntries() {
 			return
 		}
 		if !result.Reply.Success && result.Reply.Term > rf.term {
-			c.Log.Infof("[raft %d] role LEADER -> FOLLOWER", rf.me)
+			c.Log.Tracef("[raft %d] role LEADER -> FOLLOWER", rf.me)
 			rf.r = FOLLOWER
 			rf.votedTerm = result.Reply.Term
 			rf.leaderIndex = -1
@@ -147,7 +150,7 @@ func (rf *Raft) appendEntries() {
 			rf.nextIndex[result.Index] += result.EntriesNum
 			rf.matchIndex[result.Index] = rf.nextIndex[result.Index] - 1
 		} else {
-			rf.nextIndex[result.Index] = rf.getLogConflictIndex(result.Reply.Terms, result.Reply.LastIndexes)
+			rf.nextIndex[result.Index] = rf.getLogConflictIndex(result.Index, result.Reply.Terms, result.Reply.LastIndexes)
 		}
 		rf.mu.Unlock()
 	}

@@ -86,12 +86,12 @@ func repl(session *session) {
 }
 
 func main() {
-	var port string
+	var port int
 	var address string
-	flag.StringVar(&port, "port", "4520", "Port of any server in the ShardKV cluster.")
-	flag.StringVar(&address, "address", "localhost", "Address of any server in the ShardKV cluster.")
+	flag.IntVar(&port, "port", 8000, "Port of any server in the ShardKV cluster.")
+	flag.StringVar(&address, "address", "127.0.0.1", "Address of any server in the ShardKV cluster.")
 	flag.Parse()
-	target := fmt.Sprintf("%s:%s", address, port)
+	target := fmt.Sprintf("%s:%d", address, port)
 	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		fmt.Println("Failed to connect to the ShardKV cluster.")

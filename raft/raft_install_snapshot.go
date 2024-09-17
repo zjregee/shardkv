@@ -9,7 +9,8 @@ import (
 	pb "github.com/zjregee/shardkv/proto"
 )
 
-func (rf *Raft) HandleInstallSnapshot(_ context.Context, args *pb.InstallSnapshotArgs) (reply *pb.InstallSnapshotReply, err error) {
+func (rf *Raft) HandleInstallSnapshot(_ context.Context, args *pb.InstallSnapshotArgs) (reply *pb.InstallSnapshotReply, nullErr error) {
+	reply = &pb.InstallSnapshotReply{}
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	defer func() {
@@ -24,11 +25,11 @@ func (rf *Raft) HandleInstallSnapshot(_ context.Context, args *pb.InstallSnapsho
 		return
 	}
 	if rf.r != FOLLOWER {
-		c.Log.Infof("[raft %d] role %s -> FOLLOWER", rf.me, rf.r)
+		c.Log.Tracef("[raft %d] role %s -> FOLLOWER", rf.me, rf.r)
 		rf.r = FOLLOWER
 	}
 	if rf.term != args.LeaderTerm {
-		c.Log.Infof("[raft %d] term %d -> %d", rf.me, rf.term, args.LeaderTerm)
+		c.Log.Tracef("[raft %d] term %d -> %d", rf.me, rf.term, args.LeaderTerm)
 		rf.term = args.LeaderTerm
 	}
 	rf.votedTerm = args.LeaderTerm
@@ -39,7 +40,7 @@ func (rf *Raft) HandleInstallSnapshot(_ context.Context, args *pb.InstallSnapsho
 	if args.SnapshotIndex <= rf.appliedIndex {
 		return
 	}
-	c.Log.Infof("[raft %d] snapshot index %d -> %d", rf.me, rf.appliedIndex, args.SnapshotIndex)
+	c.Log.Tracef("[raft %d] snapshot index %d -> %d", rf.me, rf.appliedIndex, args.SnapshotIndex)
 	rf.snapshot = args.Snapshot
 	rf.snapshotTerm = args.SnapshotTerm
 	rf.snapshotIndex = args.SnapshotIndex
@@ -51,7 +52,7 @@ func (rf *Raft) HandleInstallSnapshot(_ context.Context, args *pb.InstallSnapsho
 		rf.log = rf.log[discard:]
 	}
 	if args.SnapshotIndex > rf.commitIndex {
-		c.Log.Infof("[raft %d] commit index %d -> %d", rf.me, rf.commitIndex, args.SnapshotIndex)
+		c.Log.Tracef("[raft %d] commit index %d -> %d", rf.me, rf.commitIndex, args.SnapshotIndex)
 		rf.commitIndex = args.SnapshotIndex
 	}
 	return
@@ -125,7 +126,7 @@ func (rf *Raft) installSnapshot() {
 			return
 		}
 		if !result.Reply.Success {
-			c.Log.Infof("[raft %d] role LEADER -> FOLLOWER", rf.me)
+			c.Log.Tracef("[raft %d] role LEADER -> FOLLOWER", rf.me)
 			rf.r = FOLLOWER
 			rf.votedTerm = result.Reply.Term
 			rf.leaderIndex = -1

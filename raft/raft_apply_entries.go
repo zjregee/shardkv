@@ -60,7 +60,7 @@ func (rf *Raft) applyEntries() {
 			SnapshotIndex: rf.snapshotIndex,
 			SnapshotTerm:  rf.snapshotTerm,
 		}
-		c.Log.Infof("[raft %d] applied index %d -> %d", rf.me, rf.appliedIndex, rf.snapshotIndex)
+		c.Log.Tracef("[raft %d] applied index %d -> %d", rf.me, rf.appliedIndex, rf.snapshotIndex)
 		rf.appliedIndex = rf.snapshotIndex
 		rf.mu.Unlock()
 		rf.applyCh <- msg
@@ -81,7 +81,7 @@ func (rf *Raft) applyEntries() {
 			}
 			result = append(result, msg)
 		}
-		c.Log.Infof("[raft %d] applied index %d -> %d", rf.me, rf.appliedIndex, rf.commitIndex)
+		c.Log.Tracef("[raft %d] applied index %d -> %d", rf.me, rf.appliedIndex, rf.commitIndex)
 		rf.appliedIndex = rf.commitIndex
 		rf.mu.Unlock()
 		for _, msg := range result {

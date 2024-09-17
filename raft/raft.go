@@ -2,7 +2,6 @@ package raft
 
 import (
 	"net"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -12,8 +11,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
-
-const DEFAULT_RAFT_SERVE_PORT = 4519
 
 const (
 	RPC_TIMEOUT        = time.Millisecond * 20
@@ -30,10 +27,9 @@ const (
 )
 
 type ApplyMsg struct {
-	CommandValid bool
-	Command      []byte
-	CommandIndex int32
-
+	CommandValid  bool
+	Command       []byte
+	CommandIndex  int32
 	SnapshotValid bool
 	Snapshot      []byte
 	SnapshotTerm  int32
@@ -60,9 +56,11 @@ type Raft struct {
 	matchIndex        []int32
 	snapshotApplied   []bool
 	me                int32
+	port              string
+	peers             []*grpc.ClientConn
 	dead              int32
 	applyCh           chan ApplyMsg
-	peers             []*grpc.ClientConn
+	server            *grpc.Server
 	pb.UnimplementedRaftServiceServer
 }
 
@@ -90,37 +88,56 @@ func MakeRaft(peers []string, me int32, applyCh chan ApplyMsg) *Raft {
 		rf.matchIndex[i] = 0
 		rf.snapshotApplied[i] = true
 	}
-	rf.me = int32(me)
-	rf.dead = 0
-	rf.applyCh = applyCh
-	for _, peer := range peers {
+	rf.me = me
+	_, port, err := net.SplitHostPort(peers[me])
+	if err != nil {
+		panic(err)
+	}
+	rf.port = port
+	rf.peers = make([]*grpc.ClientConn, len(peers))
+	for i, peer := range peers {
+		if i == int(me) {
+			rf.peers[i] = nil
+		}
 		conn, err := grpc.NewClient(peer, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			panic(err)
 		}
-		rf.peers = append(rf.peers, conn)
+		rf.peers[i] = conn
 	}
+	rf.dead = 0
+	rf.applyCh = applyCh
+	rf.server = nil
 	return rf
 }
 
 func (rf *Raft) Serve() {
-	listener, err := net.Listen("tcp", ":"+strconv.Itoa(DEFAULT_RAFT_SERVE_PORT))
+	listener, err := net.Listen("tcp", ":"+rf.port)
 	if err != nil {
 		panic(err)
 	}
-	s := grpc.NewServer()
-	pb.RegisterRaftServiceServer(s, rf)
-	err = s.Serve(listener)
-	if err != nil {
-		panic(err)
-	}
+	rf.server = grpc.NewServer()
+	pb.RegisterRaftServiceServer(rf.server, rf)
+	go func() {
+		if err := rf.server.Serve(listener); err != nil {
+			panic(err)
+		}
+	}()
 	go rf.run()
 }
 
-func (rf *Raft) GetState() (bool, int32) {
+func (rf *Raft) State() (bool, int32) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	return rf.r == LEADER, rf.leaderIndex
+}
+
+func (rf *Raft) Kill() {
+	atomic.StoreInt32(&rf.dead, 1)
+	if rf.server != nil {
+		rf.server.GracefulStop()
+		rf.server = nil
+	}
 }
 
 func (rf *Raft) killed() bool {
@@ -151,8 +168,8 @@ func (rf *Raft) run() {
 	}
 }
 
-func (rf *Raft) checkLogValid(oldLastLogTerm, oldLastLogIndex int32) bool {
-	lastLogTerm, lastLogIndex := rf.getLogState()
+func (rf *Raft) checkLogValid(oldLastLogIndex, oldLastLogTerm int32) bool {
+	lastLogIndex, lastLogTerm := rf.getLogState()
 	if lastLogIndex == 0 {
 		return true
 	}
@@ -169,7 +186,7 @@ func (rf *Raft) checkLogValid(oldLastLogTerm, oldLastLogIndex int32) bool {
 }
 
 func (rf *Raft) updateCommitIndex() {
-	_, lastLogIndex := rf.getLogState()
+	lastLogIndex, _ := rf.getLogState()
 	for i := lastLogIndex; i > rf.commitIndex; i-- {
 		term := rf.getLogTerm(i)
 		if term != rf.term {
@@ -186,7 +203,7 @@ func (rf *Raft) updateCommitIndex() {
 			}
 		}
 		if count > len(rf.peers)/2 {
-			c.Log.Infof("[raft %d] commit index %d -> %d", rf.me, rf.commitIndex, i)
+			c.Log.Tracef("[raft %d] commit index %d -> %d", rf.me, rf.commitIndex, i)
 			rf.commitIndex = i
 			return
 		}
@@ -228,14 +245,13 @@ func (rf *Raft) getLogOverview() ([]int32, []int32, []int32) {
 	return terms, firstIndexes, lastIndexes
 }
 
-func (rf *Raft) getLogConflictIndex(oldTerms, oldLastIndexes []int32) int32 {
+func (rf *Raft) getLogConflictIndex(peer int32, oldTerms, oldLastIndexes []int32) int32 {
 	if len(oldTerms) == 0 {
-		c.Assert(rf.snapshotIndex == 0, "snapshotIndex should be 0")
-		return 1
+		c.Assert(rf.snapshotIndex == 0 || !rf.snapshotApplied[peer], "snapshotIndex should be 0 or snapshotApplied should be false")
+		return rf.snapshotIndex + 1
 	}
 	terms, firstIndexes, lastIndexes := rf.getLogOverview()
 	if len(terms) == 0 {
-		c.Assert(rf.snapshotIndex == 0, "snapshotIndex should be 0")
 		return 1
 	}
 	if len(oldTerms) > len(terms) {
@@ -243,7 +259,7 @@ func (rf *Raft) getLogConflictIndex(oldTerms, oldLastIndexes []int32) int32 {
 		oldLastIndexes = oldLastIndexes[:len(terms)]
 	}
 	conflictIndex := int32(0)
-	for i := range terms {
+	for i := range oldTerms {
 		if oldTerms[i] != terms[i] {
 			conflictIndex = firstIndexes[i]
 			break
@@ -258,22 +274,25 @@ func (rf *Raft) getLogConflictIndex(oldTerms, oldLastIndexes []int32) int32 {
 		}
 	}
 	if conflictIndex == 0 {
-		conflictIndex = lastIndexes[len(lastIndexes)-1] + 1
+		conflictIndex = lastIndexes[len(oldTerms)-1] + 1
 	}
-	c.Assert(conflictIndex > rf.snapshotIndex, "conflictIndex should be greater than snapshotIndex")
+	c.Assert(conflictIndex > rf.snapshotIndex || !rf.snapshotApplied[peer], "conflictIndex should be greater than snapshotIndex or snapshotApplied should be false")
+	if conflictIndex <= rf.snapshotIndex {
+		conflictIndex = rf.snapshotIndex + 1
+	}
 	return conflictIndex
 }
 
-func (rf *Raft) getAppendEntries(peer int) (int32, int32, []*pb.LogEntry) {
-	lastLogTerm, lastLogIndex := rf.getLogState()
+func (rf *Raft) getAppendEntries(peer int32) (int32, int32, []*pb.LogEntry) {
+	lastLogIndex, lastLogTerm := rf.getLogState()
 	if lastLogIndex == 0 {
 		return 0, 0, nil
 	}
 	nextIndex := rf.nextIndex[peer]
 	c.Assert(nextIndex > rf.snapshotIndex, "nextIndex should be greater than snapshotIndex")
-	c.Assert(nextIndex <= lastLogIndex+1, "nextIndex should be less than lastLogIndex+1")
+	c.Assert(nextIndex <= lastLogIndex+1, "nextIndex should be less than or equal to lastLogIndex+1")
 	if nextIndex == lastLogIndex+1 {
-		return lastLogTerm, lastLogIndex, nil
+		return lastLogIndex, lastLogTerm, nil
 	}
 	entries := make([]*pb.LogEntry, 0)
 	for i := nextIndex; i <= lastLogIndex; i++ {
@@ -281,31 +300,27 @@ func (rf *Raft) getAppendEntries(peer int) (int32, int32, []*pb.LogEntry) {
 		entries = append(entries, entry)
 	}
 	if rf.snapshotIndex != 0 && nextIndex == rf.snapshotIndex+1 {
-		return rf.snapshotTerm, rf.snapshotIndex, entries
+		return rf.snapshotIndex, rf.snapshotTerm, entries
 	} else {
 		if nextIndex == 1 {
 			return 0, 0, entries
 		} else {
 			term := rf.getLogTerm(nextIndex - 1)
-			return term, nextIndex - 1, entries
+			return nextIndex - 1, term, entries
 		}
 	}
 }
 
 func (rf *Raft) getLog(index int32) *pb.LogEntry {
-	c.Assert(index >= rf.snapshotIndex, "index should be greater than snapshotIndex")
-	c.Assert(index <= rf.snapshotIndex+int32(len(rf.log)), "index should be less than snapshotIndex+len(log)")
-	if index == rf.snapshotIndex {
-		return nil
-	} else {
-		entry := rf.log[index-rf.snapshotIndex-1]
-		return entry
-	}
+	c.Assert(index > rf.snapshotIndex, "index should be greater than snapshotIndex")
+	c.Assert(index <= rf.snapshotIndex+int32(len(rf.log)), "index should be less than or equal to snapshotIndex+len(log)")
+	entry := rf.log[index-rf.snapshotIndex-1]
+	return entry
 }
 
 func (rf *Raft) getLogTerm(index int32) int32 {
-	c.Assert(index >= rf.snapshotIndex, "index should be greater than snapshotIndex")
-	c.Assert(index <= rf.snapshotIndex+int32(len(rf.log)), "index should be less than snapshotIndex+len(log)")
+	c.Assert(index >= rf.snapshotIndex, "index should be greater than or equal to snapshotIndex")
+	c.Assert(index <= rf.snapshotIndex+int32(len(rf.log)), "index should be less than or equal to snapshotIndex+len(log)")
 	if index == rf.snapshotIndex {
 		return rf.snapshotTerm
 	} else {

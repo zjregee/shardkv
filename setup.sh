@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 sudo apt-get update
-sudo apt-get install protobuf-compiler -y
+sudo apt-get upgrade
+sudo apt-get install protobuf-compiler cloc -y
 
 go install golang.org/x/tools/cmd/goimports@latest
 go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
