@@ -45,3 +45,8 @@ type Storage interface {
 	Reader() (StorageReader, error)
 	Close()
 }
+
+const (
+	CFDefault = "DEFAULT"
+	CFWrite   = "WRITE"
+)
