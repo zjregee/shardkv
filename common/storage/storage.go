@@ -45,5 +45,6 @@ type Storage interface {
 
 const (
 	CFDefault = "DEFAULT"
+	CFLock    = "LOCK"
 	CFWrite   = "WRITE"
 )

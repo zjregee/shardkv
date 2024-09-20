@@ -10,7 +10,9 @@ import (
 	"time"
 
 	l "github.com/zjregee/shardkv/common/logger"
+	"github.com/zjregee/shardkv/common/storage"
 	"github.com/zjregee/shardkv/common/utils"
+	mvcc "github.com/zjregee/shardkv/kv/transaction"
 	pb "github.com/zjregee/shardkv/proto"
 	"github.com/zjregee/shardkv/raft"
 	"google.golang.org/grpc"
@@ -52,6 +54,8 @@ type Server struct {
 	dead       int32
 	deadCh     chan struct{}
 	server     *grpc.Server
+	latches    *mvcc.Latches
+	storage    storage.Storage
 	pb.UnimplementedKvServiceServer
 }
 

@@ -27,11 +27,3 @@ func parseWrite(value []byte) *Write {
 	write.Kind = kind
 	return write
 }
-
-type WriteKind int
-
-const (
-	WriteKindPut    WriteKind = 1
-	WriteKindAppend WriteKind = 2
-	WriteKindDelete WriteKind = 3
-)

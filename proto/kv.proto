@@ -17,8 +17,9 @@ enum Err {
   OK             = 0;
   Duplicate      = 1;
   ErrNoKey       = 2;
-	ErrClosed      = 3;
-	ErrWrongLeader = 4;
+  ErrConflict    = 3;
+	ErrClosed      = 4;
+	ErrWrongLeader = 5;
 }
 
 enum MutationKind {
@@ -64,7 +65,7 @@ message TxnGetArgs {
 
 message TxnGetReply {
   Err    err          = 1;
-  string value        = 2;
+  bytes  value        = 2;
   int32  leader_index = 3;
 }
 

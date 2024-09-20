@@ -9,16 +9,24 @@ import (
 	"github.com/zjregee/shardkv/common/storage"
 )
 
+type WriteKind int
+
+const (
+	WriteKindPut    WriteKind = 1
+	WriteKindAppend WriteKind = 2
+	WriteKindDelete WriteKind = 3
+)
+
 type MvccTxn struct {
 	Reader  storage.StorageReader
-	StartTS uint64
+	StartTs uint64
 	Writes  []storage.Modify
 }
 
-func NewMvccTxn(reader storage.StorageReader, startTS uint64) *MvccTxn {
+func NewMvccTxn(reader storage.StorageReader, startTs uint64) *MvccTxn {
 	txn := &MvccTxn{}
 	txn.Reader = reader
-	txn.StartTS = startTS
+	txn.StartTs = startTs
 	return txn
 }
 
@@ -33,9 +41,41 @@ func (txn *MvccTxn) PutWrite(key []byte, ts uint64, write *Write) {
 	txn.Writes = append(txn.Writes, modify)
 }
 
+func (txn *MvccTxn) GetLock(key []byte) (*Lock, error) {
+	value, err := txn.Reader.GetCF(storage.CFLock, key)
+	if err != nil {
+		return nil, err
+	}
+	if value == nil {
+		return nil, nil
+	}
+	return parseLock(value), nil
+}
+
+func (txn *MvccTxn) PutLock(key []byte, lock *Lock) {
+	modify := storage.Modify{
+		Data: storage.Put{
+			CF:    storage.CFLock,
+			Key:   key,
+			Value: lock.toBytes(),
+		},
+	}
+	txn.Writes = append(txn.Writes, modify)
+}
+
+func (txn *MvccTxn) DeleteLock(key []byte) {
+	modify := storage.Modify{
+		Data: storage.Delete{
+			CF:  storage.CFLock,
+			Key: key,
+		},
+	}
+	txn.Writes = append(txn.Writes, modify)
+}
+
 func (txn *MvccTxn) GetValue(key []byte) ([]byte, error) {
 	iter := txn.Reader.IterCF(storage.CFWrite)
-	iter.Seek(encodeKey(key, txn.StartTS))
+	iter.Seek(encodeKey(key, txn.StartTs))
 	if !iter.Valid() {
 		return nil, nil
 	}
@@ -59,7 +99,18 @@ func (txn *MvccTxn) PutValue(key []byte, value []byte) {
 	modify := storage.Modify{
 		Data: storage.Put{
 			CF:    storage.CFDefault,
-			Key:   encodeKey(key, txn.StartTS),
+			Key:   encodeKey(key, txn.StartTs),
+			Value: value,
+		},
+	}
+	txn.Writes = append(txn.Writes, modify)
+}
+
+func (txn *MvccTxn) AppendValue(key []byte, value []byte) {
+	modify := storage.Modify{
+		Data: storage.Append{
+			CF:    storage.CFDefault,
+			Key:   encodeKey(key, txn.StartTs),
 			Value: value,
 		},
 	}
@@ -70,7 +121,7 @@ func (txn *MvccTxn) DeleteValue(key []byte) {
 	modify := storage.Modify{
 		Data: storage.Delete{
 			CF:  storage.CFDefault,
-			Key: encodeKey(key, txn.StartTS),
+			Key: encodeKey(key, txn.StartTs),
 		},
 	}
 	txn.Writes = append(txn.Writes, modify)
