@@ -3,6 +3,7 @@ module github.com/zjregee/shardkv
 go 1.22
 
 require (
+	github.com/petar/GoLLRB v0.0.0-20210522233825-ae3b015fd3e9
 	github.com/sirupsen/logrus v1.9.3
 	go.etcd.io/bbolt v1.3.11
 	google.golang.org/grpc v1.66.0

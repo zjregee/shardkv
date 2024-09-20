@@ -35,7 +35,6 @@ func (txn *MvccTxn) PutWrite(key []byte, ts uint64, write *Write) {
 
 func (txn *MvccTxn) GetValue(key []byte) ([]byte, error) {
 	iter := txn.Reader.IterCF(storage.CFWrite)
-	defer iter.Close()
 	iter.Seek(encodeKey(key, txn.StartTS))
 	if !iter.Valid() {
 		return nil, nil
@@ -79,7 +78,6 @@ func (txn *MvccTxn) DeleteValue(key []byte) {
 
 func (txn *MvccTxn) MostRecentWrite(key []byte) (*Write, uint64, error) {
 	iter := txn.Reader.IterCF(storage.CFWrite)
-	defer iter.Close()
 	iter.Seek(encodeKey(key, math.MaxUint64))
 	if !iter.Valid() {
 		return nil, 0, nil

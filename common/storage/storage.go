@@ -29,21 +29,18 @@ type StorageItem interface {
 type StorageIterator interface {
 	Valid() bool
 	Item() StorageItem
-	Seek(key []byte)
 	Next()
-	Close()
+	Seek(key []byte)
 }
 
 type StorageReader interface {
 	GetCF(cf string, key []byte) ([]byte, error)
 	IterCF(cf string) StorageIterator
-	Close()
 }
 
 type Storage interface {
 	Write(batch []Modify) error
 	Reader() (StorageReader, error)
-	Close()
 }
 
 const (
