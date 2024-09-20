@@ -6,7 +6,8 @@ import (
 	"sync"
 	"time"
 
-	c "github.com/zjregee/shardkv/common"
+	l "github.com/zjregee/shardkv/common/logger"
+	"github.com/zjregee/shardkv/common/utils"
 	pb "github.com/zjregee/shardkv/proto"
 )
 
@@ -15,7 +16,7 @@ func (rf *Raft) HandleRequestVote(_ context.Context, args *pb.RequestVoteArgs) (
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	defer func() {
-		c.Log.Tracef(
+		l.Log.Tracef(
 			"[raft %d] reply request vote to %d, candidate_term=%d last_log_index=%d last_log_term=%d success=%t",
 			rf.me, args.CandidateIndex, args.CandidateTerm, args.LastLogIndex, args.LastLogTerm, reply.Success,
 		)
@@ -26,7 +27,7 @@ func (rf *Raft) HandleRequestVote(_ context.Context, args *pb.RequestVoteArgs) (
 		return
 	}
 	if rf.r != FOLLOWER {
-		c.Log.Tracef("[raft %d] role %s -> FOLLOWER", rf.me, rf.r)
+		l.Log.Tracef("[raft %d] role %s -> FOLLOWER", rf.me, rf.r)
 		rf.r = FOLLOWER
 	}
 	rf.votedTerm = args.CandidateTerm
@@ -50,7 +51,7 @@ func (rf *Raft) requestVote() {
 		rf.mu.Unlock()
 		return
 	}
-	c.Log.Tracef("[raft %d] role FOLLOWER -> CANDIDATES", rf.me)
+	l.Log.Tracef("[raft %d] role FOLLOWER -> CANDIDATES", rf.me)
 	rf.r = CANDIDATES
 	term := rf.term
 	rf.mu.Unlock()
@@ -60,9 +61,9 @@ func (rf *Raft) requestVote() {
 			rf.mu.Unlock()
 			return
 		}
-		c.Assert(term == rf.term, "term should be equal to rf.term")
+		utils.Assert(term == rf.term, "term should be equal to rf.term")
 		rf.votedTerm += 1
-		c.Log.Tracef("[raft %d] start election, term %d", rf.me, rf.votedTerm)
+		l.Log.Tracef("[raft %d] start election, term %d", rf.me, rf.votedTerm)
 		lastLogIndex, lastLogTerm := rf.getLogState()
 		args := &pb.RequestVoteArgs{
 			CandidateTerm:  rf.votedTerm,
@@ -82,7 +83,7 @@ func (rf *Raft) requestVote() {
 				defer wg.Done()
 				reply, err := rf.callRequestVoteWithTimeout(peer, args, RPC_TIMEOUT)
 				if err != nil {
-					c.Log.Warnf("[raft %d] request vote from %d error: %v", rf.me, peer, err)
+					l.Log.Warnf("[raft %d] request vote from %d error: %v", rf.me, peer, err)
 					return
 				}
 				resultChan <- reply
@@ -107,11 +108,11 @@ func (rf *Raft) requestVote() {
 			rf.mu.Unlock()
 			return
 		}
-		c.Assert(term == rf.term, "term should be equal to rf.term")
+		utils.Assert(term == rf.term, "term should be equal to rf.term")
 		if successCount > len(rf.peers)/2 {
-			c.Log.Tracef("[raft %d] win the election", rf.me)
-			c.Log.Tracef("[raft %d] role CANDIDATES -> LEADER", rf.me)
-			c.Log.Tracef("[raft %d] term %d -> %d", rf.me, rf.term, rf.votedTerm)
+			l.Log.Tracef("[raft %d] win the election", rf.me)
+			l.Log.Tracef("[raft %d] role CANDIDATES -> LEADER", rf.me)
+			l.Log.Tracef("[raft %d] term %d -> %d", rf.me, rf.term, rf.votedTerm)
 			rf.r = LEADER
 			rf.term = rf.votedTerm
 			rf.leaderIndex = rf.me

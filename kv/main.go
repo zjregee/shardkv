@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	c "github.com/zjregee/shardkv/common"
+	l "github.com/zjregee/shardkv/common/logger"
 	"github.com/zjregee/shardkv/kv/server"
 )
 
@@ -32,12 +32,12 @@ func main() {
 	flag.IntVar(&index, "index", -1, "index of the current peer")
 	flag.Parse()
 	svr := server.MakeServer(kv_peers, raft_peers, int32(index))
-	c.Log.Infof("Starting server at index %d with kv_peers: %v, raft_peers: %v", index, kv_peers, raft_peers)
+	l.Log.Infof("Starting server at index %d with kv_peers: %v, raft_peers: %v", index, kv_peers, raft_peers)
 	svr.Serve()
 	stopChan := make(chan os.Signal, 1)
 	signal.Notify(stopChan, syscall.SIGINT, syscall.SIGTERM)
 	<-stopChan
-	c.Log.Infoln("Shutting down server...")
+	l.Log.Infoln("Shutting down server...")
 	svr.Kill()
 	time.Sleep(time.Second)
 }

@@ -6,7 +6,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	c "github.com/zjregee/shardkv/common"
+	l "github.com/zjregee/shardkv/common/logger"
+	"github.com/zjregee/shardkv/common/utils"
 	pb "github.com/zjregee/shardkv/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -203,7 +204,7 @@ func (rf *Raft) updateCommitIndex() {
 			}
 		}
 		if count > len(rf.peers)/2 {
-			c.Log.Tracef("[raft %d] commit index %d -> %d", rf.me, rf.commitIndex, i)
+			l.Log.Tracef("[raft %d] commit index %d -> %d", rf.me, rf.commitIndex, i)
 			rf.commitIndex = i
 			return
 		}
@@ -240,14 +241,14 @@ func (rf *Raft) getLogOverview() ([]int32, []int32, []int32) {
 			lastIndexes[len(lastIndexes)-1] = index
 		}
 	}
-	c.Assert(len(terms) == len(firstIndexes), "len(terms) should be equal to len(firstIndexes)")
-	c.Assert(len(terms) == len(lastIndexes), "len(terms) should be equal to len(lastIndexes)")
+	utils.Assert(len(terms) == len(firstIndexes), "len(terms) should be equal to len(firstIndexes)")
+	utils.Assert(len(terms) == len(lastIndexes), "len(terms) should be equal to len(lastIndexes)")
 	return terms, firstIndexes, lastIndexes
 }
 
 func (rf *Raft) getLogConflictIndex(peer int32, oldTerms, oldLastIndexes []int32) int32 {
 	if len(oldTerms) == 0 {
-		c.Assert(rf.snapshotIndex == 0 || !rf.snapshotApplied[peer], "snapshotIndex should be 0 or snapshotApplied should be false")
+		utils.Assert(rf.snapshotIndex == 0 || !rf.snapshotApplied[peer], "snapshotIndex should be 0 or snapshotApplied should be false")
 		return rf.snapshotIndex + 1
 	}
 	terms, firstIndexes, lastIndexes := rf.getLogOverview()
@@ -276,7 +277,7 @@ func (rf *Raft) getLogConflictIndex(peer int32, oldTerms, oldLastIndexes []int32
 	if conflictIndex == 0 {
 		conflictIndex = lastIndexes[len(oldTerms)-1] + 1
 	}
-	c.Assert(conflictIndex > rf.snapshotIndex || !rf.snapshotApplied[peer], "conflictIndex should be greater than snapshotIndex or snapshotApplied should be false")
+	utils.Assert(conflictIndex > rf.snapshotIndex || !rf.snapshotApplied[peer], "conflictIndex should be greater than snapshotIndex or snapshotApplied should be false")
 	if conflictIndex <= rf.snapshotIndex {
 		conflictIndex = rf.snapshotIndex + 1
 	}
@@ -289,8 +290,8 @@ func (rf *Raft) getAppendEntries(peer int32) (int32, int32, []*pb.LogEntry) {
 		return 0, 0, nil
 	}
 	nextIndex := rf.nextIndex[peer]
-	c.Assert(nextIndex > rf.snapshotIndex, "nextIndex should be greater than snapshotIndex")
-	c.Assert(nextIndex <= lastLogIndex+1, "nextIndex should be less than or equal to lastLogIndex+1")
+	utils.Assert(nextIndex > rf.snapshotIndex, "nextIndex should be greater than snapshotIndex")
+	utils.Assert(nextIndex <= lastLogIndex+1, "nextIndex should be less than or equal to lastLogIndex+1")
 	if nextIndex == lastLogIndex+1 {
 		return lastLogIndex, lastLogTerm, nil
 	}
@@ -312,15 +313,15 @@ func (rf *Raft) getAppendEntries(peer int32) (int32, int32, []*pb.LogEntry) {
 }
 
 func (rf *Raft) getLog(index int32) *pb.LogEntry {
-	c.Assert(index > rf.snapshotIndex, "index should be greater than snapshotIndex")
-	c.Assert(index <= rf.snapshotIndex+int32(len(rf.log)), "index should be less than or equal to snapshotIndex+len(log)")
+	utils.Assert(index > rf.snapshotIndex, "index should be greater than snapshotIndex")
+	utils.Assert(index <= rf.snapshotIndex+int32(len(rf.log)), "index should be less than or equal to snapshotIndex+len(log)")
 	entry := rf.log[index-rf.snapshotIndex-1]
 	return entry
 }
 
 func (rf *Raft) getLogTerm(index int32) int32 {
-	c.Assert(index >= rf.snapshotIndex, "index should be greater than or equal to snapshotIndex")
-	c.Assert(index <= rf.snapshotIndex+int32(len(rf.log)), "index should be less than or equal to snapshotIndex+len(log)")
+	utils.Assert(index >= rf.snapshotIndex, "index should be greater than or equal to snapshotIndex")
+	utils.Assert(index <= rf.snapshotIndex+int32(len(rf.log)), "index should be less than or equal to snapshotIndex+len(log)")
 	if index == rf.snapshotIndex {
 		return rf.snapshotTerm
 	} else {

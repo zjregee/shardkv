@@ -1,7 +1,8 @@
 package raft
 
 import (
-	c "github.com/zjregee/shardkv/common"
+	l "github.com/zjregee/shardkv/common/logger"
+	"github.com/zjregee/shardkv/common/utils"
 	pb "github.com/zjregee/shardkv/proto"
 )
 
@@ -26,9 +27,9 @@ func (rf *Raft) Snapshot(index int32, snapshot []byte) bool {
 	if rf.r != LEADER {
 		return false
 	}
-	c.Assert(index > rf.snapshotIndex, "index should be greater than snapshotIndex")
-	c.Assert(index <= rf.appliedIndex, "index should be greater than or equal to appliedIndex")
-	c.Assert(index <= rf.commitIndex, "index should be less than or equal to commitIndex")
+	utils.Assert(index > rf.snapshotIndex, "index should be greater than snapshotIndex")
+	utils.Assert(index <= rf.appliedIndex, "index should be greater than or equal to appliedIndex")
+	utils.Assert(index <= rf.commitIndex, "index should be less than or equal to commitIndex")
 	term := rf.getLogTerm(index)
 	discard := index - rf.snapshotIndex
 	rf.log = rf.log[discard:]
@@ -50,8 +51,8 @@ func (rf *Raft) Snapshot(index int32, snapshot []byte) bool {
 func (rf *Raft) applyEntries() {
 	rf.mu.Lock()
 	if rf.applySnapshotOnce {
-		c.Assert(rf.snapshotIndex > rf.appliedIndex, "snapshotIndex should be greater than appliedIndex")
-		c.Assert(rf.snapshotIndex <= rf.commitIndex, "snapshotIndex should be less than or equal to commitIndex")
+		utils.Assert(rf.snapshotIndex > rf.appliedIndex, "snapshotIndex should be greater than appliedIndex")
+		utils.Assert(rf.snapshotIndex <= rf.commitIndex, "snapshotIndex should be less than or equal to commitIndex")
 		rf.applySnapshotOnce = false
 		msg := ApplyMsg{
 			CommandValid:  false,
@@ -60,12 +61,12 @@ func (rf *Raft) applyEntries() {
 			SnapshotIndex: rf.snapshotIndex,
 			SnapshotTerm:  rf.snapshotTerm,
 		}
-		c.Log.Tracef("[raft %d] applied index %d -> %d", rf.me, rf.appliedIndex, rf.snapshotIndex)
+		l.Log.Tracef("[raft %d] applied index %d -> %d", rf.me, rf.appliedIndex, rf.snapshotIndex)
 		rf.appliedIndex = rf.snapshotIndex
 		rf.mu.Unlock()
 		rf.applyCh <- msg
 	} else {
-		c.Assert(rf.appliedIndex <= rf.commitIndex, "appliedIndex should be less than or equal to commitIndex")
+		utils.Assert(rf.appliedIndex <= rf.commitIndex, "appliedIndex should be less than or equal to commitIndex")
 		if rf.appliedIndex == rf.commitIndex {
 			rf.mu.Unlock()
 			return
@@ -81,7 +82,7 @@ func (rf *Raft) applyEntries() {
 			}
 			result = append(result, msg)
 		}
-		c.Log.Tracef("[raft %d] applied index %d -> %d", rf.me, rf.appliedIndex, rf.commitIndex)
+		l.Log.Tracef("[raft %d] applied index %d -> %d", rf.me, rf.appliedIndex, rf.commitIndex)
 		rf.appliedIndex = rf.commitIndex
 		rf.mu.Unlock()
 		for _, msg := range result {

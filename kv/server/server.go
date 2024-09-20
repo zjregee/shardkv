@@ -9,7 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	c "github.com/zjregee/shardkv/common"
+	l "github.com/zjregee/shardkv/common/logger"
+	"github.com/zjregee/shardkv/common/utils"
 	pb "github.com/zjregee/shardkv/proto"
 	"github.com/zjregee/shardkv/raft"
 	"google.golang.org/grpc"
@@ -119,8 +120,8 @@ func (kv *Server) run() {
 			return
 		}
 		kv.mu.Lock()
-		c.Assert(msg.CommandValid, "commnadValid should be true")
-		c.Assert(msg.CommandIndex == kv.dataIndex+1, "commandIndex should be equal to dataIndex+1")
+		utils.Assert(msg.CommandValid, "commnadValid should be true")
+		utils.Assert(msg.CommandIndex == kv.dataIndex+1, "commandIndex should be equal to dataIndex+1")
 		op := deserializeOp(msg.Command)
 		kv.recordOp(op)
 		kv.applyOperation(op)
@@ -235,7 +236,7 @@ func (kv *Server) recordOp(op Op) {
 	} else {
 		record = fmt.Sprintf("%s(id: %d, key: %s, value: %s)", op.Kind, op.Id, op.Key, op.Value)
 	}
-	c.Log.Infof("[node %d] apply operation: %s", kv.me, record)
+	l.Log.Infof("[node %d] apply operation: %s", kv.me, record)
 }
 
 func serializeOp(op Op) []byte {

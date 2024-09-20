@@ -5,7 +5,8 @@ import (
 	"sync"
 	"time"
 
-	c "github.com/zjregee/shardkv/common"
+	l "github.com/zjregee/shardkv/common/logger"
+	"github.com/zjregee/shardkv/common/utils"
 	pb "github.com/zjregee/shardkv/proto"
 )
 
@@ -14,7 +15,7 @@ func (rf *Raft) HandleAppendEntries(_ context.Context, args *pb.AppendEntriesArg
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	defer func() {
-		c.Log.Tracef(
+		l.Log.Tracef(
 			"[raft %d] reply append entries to %d, leader_term=%d leader_commit=%d prev_log_index=%d prev_log_term=%d entries_num=%d success=%t",
 			rf.me, args.LeaderIndex, args.LeaderTerm, args.LeaderCommit, args.PrevLogIndex, args.PrevLogTerm, len(args.Entries), reply.Success,
 		)
@@ -25,17 +26,17 @@ func (rf *Raft) HandleAppendEntries(_ context.Context, args *pb.AppendEntriesArg
 		return
 	}
 	if rf.r != FOLLOWER {
-		c.Log.Tracef("[raft %d] role %s -> FOLLOWER", rf.me, rf.r)
+		l.Log.Tracef("[raft %d] role %s -> FOLLOWER", rf.me, rf.r)
 		rf.r = FOLLOWER
 	}
 	if rf.term != args.LeaderTerm {
-		c.Log.Tracef("[raft %d] term %d -> %d", rf.me, rf.term, args.LeaderTerm)
+		l.Log.Tracef("[raft %d] term %d -> %d", rf.me, rf.term, args.LeaderTerm)
 		rf.term = args.LeaderTerm
 	}
 	rf.votedTerm = args.LeaderTerm
 	rf.leaderIndex = args.LeaderIndex
 	rf.lastActiveTime = time.Now()
-	c.Assert(args.PrevLogIndex >= rf.snapshotIndex, "prevLogIndex should be greater than or equal to snapshotIndex")
+	utils.Assert(args.PrevLogIndex >= rf.snapshotIndex, "prevLogIndex should be greater than or equal to snapshotIndex")
 	lastLogIndex, _ := rf.getLogState()
 	if lastLogIndex < args.PrevLogIndex || (args.PrevLogIndex > 0 && rf.getLogTerm(args.PrevLogIndex) != args.PrevLogTerm) {
 		terms, _, lastIndexes := rf.getLogOverview()
@@ -59,9 +60,9 @@ func (rf *Raft) HandleAppendEntries(_ context.Context, args *pb.AppendEntriesArg
 		}
 	}
 	lastLogIndex, _ = rf.getLogState()
-	c.Assert(lastLogIndex == args.PrevLogIndex+int32(len(args.Entries)), "lastLogIndex should be equal to prevLogIndex+len(entries)")
+	utils.Assert(lastLogIndex == args.PrevLogIndex+int32(len(args.Entries)), "lastLogIndex should be equal to prevLogIndex+len(entries)")
 	if args.LeaderCommit > rf.commitIndex {
-		c.Log.Tracef("[raft %d] commit index %d -> %d", rf.me, rf.commitIndex, args.LeaderCommit)
+		l.Log.Tracef("[raft %d] commit index %d -> %d", rf.me, rf.commitIndex, args.LeaderCommit)
 		rf.commitIndex = args.LeaderCommit
 	}
 	return
@@ -121,7 +122,7 @@ func (rf *Raft) appendEntries() {
 			defer wg.Done()
 			reply, err := rf.callAppendEntriesWithTimeout(peer, args, RPC_TIMEOUT)
 			if err != nil {
-				c.Log.Errorf("[raft %d] append entries to %d failed: %v", rf.me, peer, err)
+				l.Log.Errorf("[raft %d] append entries to %d failed: %v", rf.me, peer, err)
 				return
 			}
 			resultChan <- &appendEntriesReplyWithIndex{peer, int32(len(args.Entries)), reply}
@@ -138,7 +139,7 @@ func (rf *Raft) appendEntries() {
 			return
 		}
 		if !result.Reply.Success && result.Reply.Term > rf.term {
-			c.Log.Tracef("[raft %d] role LEADER -> FOLLOWER", rf.me)
+			l.Log.Tracef("[raft %d] role LEADER -> FOLLOWER", rf.me)
 			rf.r = FOLLOWER
 			rf.votedTerm = result.Reply.Term
 			rf.leaderIndex = -1

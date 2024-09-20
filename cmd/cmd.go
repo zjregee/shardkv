@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	c "github.com/zjregee/shardkv/common"
+	"github.com/zjregee/shardkv/common/utils"
 	pb "github.com/zjregee/shardkv/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -98,7 +98,7 @@ func main() {
 		return
 	}
 	queryArgs := pb.ConfigQueryArgs{
-		Id: c.Nrand(),
+		Id: utils.Nrand(),
 	}
 	client := pb.NewKvServiceClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), RPC_TIMEOUT)

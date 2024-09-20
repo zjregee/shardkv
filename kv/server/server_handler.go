@@ -3,14 +3,14 @@ package server
 import (
 	"context"
 
-	c "github.com/zjregee/shardkv/common"
+	l "github.com/zjregee/shardkv/common/logger"
 	pb "github.com/zjregee/shardkv/proto"
 )
 
 func (kv *Server) HandleGet(_ context.Context, args *pb.GetArgs) (reply *pb.GetReply, nullErr error) {
 	reply = &pb.GetReply{}
 	defer func() {
-		c.Log.Infof(
+		l.Log.Infof(
 			"[node %d] reply get request, id=%d key=%s, value=%s, err=%s",
 			kv.me, args.Id, args.Key, reply.Value, reply.Err,
 		)
@@ -41,7 +41,7 @@ func (kv *Server) HandleGet(_ context.Context, args *pb.GetArgs) (reply *pb.GetR
 func (kv *Server) HandleModify(_ context.Context, args *pb.ModifyArgs) (reply *pb.ModifyReply, nullErr error) {
 	reply = &pb.ModifyReply{}
 	defer func() {
-		c.Log.Infof(
+		l.Log.Infof(
 			"[node %d] reply modify request, id=%d kind=%s key=%s, value=%s, err=%s",
 			kv.me, args.Id, args.Kind, args.Key, args.Value, reply.Err,
 		)
@@ -72,7 +72,7 @@ func (kv *Server) HandleModify(_ context.Context, args *pb.ModifyArgs) (reply *p
 func (kv *Server) HandleConfigQuery(_ context.Context, args *pb.ConfigQueryArgs) (reply *pb.ConfigQueryReply, nullErr error) {
 	reply = &pb.ConfigQueryReply{}
 	defer func() {
-		c.Log.Infof(
+		l.Log.Infof(
 			"[node %d] reply config query request, id=%d peers=%v leader_index=%d err=%s",
 			kv.me, args.Id, reply.Peers, reply.LeaderIndex, reply.Err,
 		)

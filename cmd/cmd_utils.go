@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	c "github.com/zjregee/shardkv/common"
+	"github.com/zjregee/shardkv/common/utils"
 	pb "github.com/zjregee/shardkv/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -35,12 +35,12 @@ func Get(session *session, args ...string) (string, error) {
 		return "", fmt.Errorf("usage: GET <key>")
 	}
 	getArgs := pb.GetArgs{
-		Id:  c.Nrand(),
+		Id:  utils.Nrand(),
 		Key: args[1],
 	}
 	for {
 		if session.leaderIndex == -1 {
-			session.leaderIndex = int32(c.Nrand()) % int32(len(session.peers))
+			session.leaderIndex = int32(utils.Nrand()) % int32(len(session.peers))
 		}
 		client := pb.NewKvServiceClient(session.peers[session.leaderIndex])
 		ctx, cancel := context.WithTimeout(context.Background(), RPC_TIMEOUT)
@@ -73,7 +73,7 @@ func Modify(session *session, args ...string) (string, error) {
 		}
 	}
 	modifyArgs := pb.ModifyArgs{
-		Id:    c.Nrand(),
+		Id:    utils.Nrand(),
 		Kind:  command,
 		Key:   args[1],
 		Value: "",
@@ -83,7 +83,7 @@ func Modify(session *session, args ...string) (string, error) {
 	}
 	for {
 		if session.leaderIndex == -1 {
-			session.leaderIndex = int32(c.Nrand()) % int32(len(session.peers))
+			session.leaderIndex = int32(utils.Nrand()) % int32(len(session.peers))
 		}
 		client := pb.NewKvServiceClient(session.peers[session.leaderIndex])
 		ctx, cancel := context.WithTimeout(context.Background(), RPC_TIMEOUT)
