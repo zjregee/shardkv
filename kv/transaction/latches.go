@@ -1,4 +1,4 @@
-package mvcc
+package transaction
 
 import "sync"
 
@@ -11,22 +11,6 @@ func NewLatches() *Latches {
 	l := &Latches{}
 	l.latchMap = make(map[string]*sync.WaitGroup)
 	return l
-}
-
-func (l *Latches) AcquireLatches(keys [][]byte) *sync.WaitGroup {
-	l.latchGuard.Lock()
-	defer l.latchGuard.Unlock()
-	for _, key := range keys {
-		if latchWg, ok := l.latchMap[string(key)]; ok {
-			return latchWg
-		}
-	}
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	for _, key := range keys {
-		l.latchMap[string(key)] = wg
-	}
-	return nil
 }
 
 func (l *Latches) ReleaseLatches(keys [][]byte) {
@@ -45,10 +29,26 @@ func (l *Latches) ReleaseLatches(keys [][]byte) {
 
 func (l *Latches) WaitForLatches(keys [][]byte) {
 	for {
-		wg := l.AcquireLatches(keys)
+		wg := l.acquireLatches(keys)
 		if wg == nil {
 			return
 		}
 		wg.Wait()
 	}
+}
+
+func (l *Latches) acquireLatches(keys [][]byte) *sync.WaitGroup {
+	l.latchGuard.Lock()
+	defer l.latchGuard.Unlock()
+	for _, key := range keys {
+		if latchWg, ok := l.latchMap[string(key)]; ok {
+			return latchWg
+		}
+	}
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	for _, key := range keys {
+		l.latchMap[string(key)] = wg
+	}
+	return nil
 }

@@ -1,4 +1,4 @@
-package mvcc
+package transaction
 
 import (
 	"encoding/binary"

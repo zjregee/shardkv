@@ -1,4 +1,4 @@
-package mvcc
+package transaction
 
 import (
 	"bytes"
@@ -12,9 +12,10 @@ import (
 type WriteKind int
 
 const (
-	WriteKindPut    WriteKind = 1
-	WriteKindAppend WriteKind = 2
-	WriteKindDelete WriteKind = 3
+	WriteKindPut      WriteKind = 1
+	WriteKindAppend   WriteKind = 2
+	WriteKindDelete   WriteKind = 3
+	WriteKindRollback WriteKind = 4
 )
 
 type MvccTxn struct {
@@ -90,7 +91,7 @@ func (txn *MvccTxn) GetValue(key []byte) ([]byte, error) {
 		return nil, nil
 	}
 	if write.Kind == WriteKindPut || write.Kind == WriteKindAppend {
-		return txn.Reader.GetCF(storage.CFDefault, encodeKey(key, write.StartTS))
+		return txn.Reader.GetCF(storage.CFDefault, encodeKey(key, write.StartTs))
 	}
 	return nil, nil
 }
@@ -125,6 +126,29 @@ func (txn *MvccTxn) DeleteValue(key []byte) {
 		},
 	}
 	txn.Writes = append(txn.Writes, modify)
+}
+
+func (txn *MvccTxn) CurrentWrite(key []byte) (*Write, uint64, error) {
+	_, err := txn.Reader.GetCF(storage.CFDefault, encodeKey(key, txn.StartTs))
+	if err != nil {
+		return nil, 0, err
+	}
+	iter := txn.Reader.IterCF(storage.CFWrite)
+	iter.Seek(encodeKey(key, math.MaxUint64))
+	for iter.Valid() {
+		item := iter.Item()
+		itemKey := item.Key()
+		if !bytes.Equal(decodeKey(itemKey), key) {
+			return nil, 0, nil
+		}
+		itemValue := item.Value()
+		write := parseWrite(itemValue)
+		if write.StartTs == txn.StartTs {
+			return write, decodeTimestamp(itemKey), nil
+		}
+		iter.Next()
+	}
+	return nil, 0, nil
 }
 
 func (txn *MvccTxn) MostRecentWrite(key []byte) (*Write, uint64, error) {
