@@ -58,7 +58,7 @@ func (kv *Server) HandleTxnPrewrite(_ context.Context, args *pb.TxnPrewriteArgs)
 		lock := &mvcc.Lock{}
 		lock.Primary = m.Key
 		lock.StartTs = args.StartTs
-		switch m.Op {
+		switch m.Kind {
 		case pb.MutationKind_Put:
 			txn.PutValue(m.Key, m.Value)
 			lock.Kind = mvcc.WriteKindPut

@@ -25,13 +25,29 @@ const (
 	reset = "\033[0m"
 )
 
-var commands = map[string]func(*session, ...string) (string, error){
+var commands = map[string]func(*session, ...string) string{
 	"GET":    Get,
 	"SET":    Modify,
 	"APPEND": Modify,
-	"DEL":    Modify,
-	"MULTI":  Modify,
-	"EXEC":   Modify,
+	"DELETE": Modify,
+	"MULTI":  Multi,
+	"EXEC":   Exec,
+}
+
+func Get(session *session, args ...string) string {
+	return session.TxnGet(args...)
+}
+
+func Modify(session *session, args ...string) string {
+	return session.TxnModify(args...)
+}
+
+func Multi(session *session, args ...string) string {
+	return session.TxnMulti()
+}
+
+func Exec(session *session, args ...string) string {
+	return session.TxnExec()
 }
 
 func repl(session *session) {
@@ -77,13 +93,8 @@ func repl(session *session) {
 			fmt.Println("unknown command")
 			continue
 		}
-		result, err := handler(session, args...)
-		if err != nil {
-			success = false
-			fmt.Println(err.Error())
-		} else {
-			fmt.Println(result)
-		}
+		result := handler(session, args...)
+		fmt.Println(result)
 	}
 }
 
