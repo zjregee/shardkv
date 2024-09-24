@@ -43,10 +43,7 @@ func (txn *MvccTxn) PutWrite(key []byte, ts uint64, write *Write) {
 }
 
 func (txn *MvccTxn) GetLock(key []byte) (*Lock, error) {
-	value, err := txn.Reader.GetCF(storage.CFLock, key)
-	if err != nil {
-		return nil, err
-	}
+	value := txn.Reader.GetCf(storage.CFLock, key)
 	if value == nil {
 		return nil, nil
 	}
@@ -74,26 +71,21 @@ func (txn *MvccTxn) DeleteLock(key []byte) {
 	txn.Writes = append(txn.Writes, modify)
 }
 
-func (txn *MvccTxn) GetValue(key []byte) ([]byte, error) {
-	iter := txn.Reader.IterCF(storage.CFWrite)
-	iter.Seek(encodeKey(key, txn.StartTs))
-	if !iter.Valid() {
-		return nil, nil
-	}
-	item := iter.Item()
+func (txn *MvccTxn) GetValue(key []byte) []byte {
+	item := txn.Reader.NextCf(storage.CFWrite, encodeKey(key, txn.StartTs))
 	itemKey := item.Key()
 	if !bytes.Equal(decodeKey(itemKey), key) {
-		return nil, nil
+		return nil
 	}
 	itemValue := item.Value()
 	write := parseWrite(itemValue)
 	if write.Kind == WriteKindDelete {
-		return nil, nil
+		return nil
 	}
 	if write.Kind == WriteKindPut || write.Kind == WriteKindAppend {
-		return txn.Reader.GetCF(storage.CFDefault, encodeKey(key, write.StartTs))
+		return txn.Reader.GetCf(storage.CFDefault, encodeKey(key, write.StartTs))
 	}
-	return nil, nil
+	return nil
 }
 
 func (txn *MvccTxn) PutValue(key []byte, value []byte) {
@@ -128,42 +120,35 @@ func (txn *MvccTxn) DeleteValue(key []byte) {
 	txn.Writes = append(txn.Writes, modify)
 }
 
-func (txn *MvccTxn) CurrentWrite(key []byte) (*Write, uint64, error) {
-	_, err := txn.Reader.GetCF(storage.CFDefault, encodeKey(key, txn.StartTs))
-	if err != nil {
-		return nil, 0, err
+func (txn *MvccTxn) CurrentWrite(key []byte) (*Write, uint64) {
+	value := txn.Reader.GetCf(storage.CFDefault, encodeKey(key, txn.StartTs))
+	if value == nil {
+		return nil, 0
 	}
-	iter := txn.Reader.IterCF(storage.CFWrite)
-	iter.Seek(encodeKey(key, math.MaxUint64))
-	for iter.Valid() {
-		item := iter.Item()
+	item := txn.Reader.NextCf(storage.CFWrite, encodeKey(key, math.MaxUint64))
+	for item != nil {
 		itemKey := item.Key()
 		if !bytes.Equal(decodeKey(itemKey), key) {
-			return nil, 0, nil
+			return nil, 0
 		}
 		itemValue := item.Value()
 		write := parseWrite(itemValue)
 		if write.StartTs == txn.StartTs {
-			return write, decodeTimestamp(itemKey), nil
+			return write, decodeTimestamp(itemKey)
 		}
-		iter.Next()
+		item = txn.Reader.NextCf(storage.CFWrite, itemKey)
 	}
-	return nil, 0, nil
+	return nil, 0
 }
 
-func (txn *MvccTxn) MostRecentWrite(key []byte) (*Write, uint64, error) {
-	iter := txn.Reader.IterCF(storage.CFWrite)
-	iter.Seek(encodeKey(key, math.MaxUint64))
-	if !iter.Valid() {
-		return nil, 0, nil
-	}
-	item := iter.Item()
+func (txn *MvccTxn) MostRecentWrite(key []byte) (*Write, uint64) {
+	item := txn.Reader.NextCf(storage.CFWrite, encodeKey(key, math.MaxUint64))
 	itemKey := item.Key()
 	if !bytes.Equal(decodeKey(itemKey), key) {
-		return nil, 0, nil
+		return nil, 0
 	}
 	itemValue := item.Value()
-	return parseWrite(itemValue), decodeTimestamp(itemKey), nil
+	return parseWrite(itemValue), decodeTimestamp(itemKey)
 }
 
 func encodeKey(key []byte, ts uint64) []byte {

@@ -1,5 +1,7 @@
 package storage
 
+import "encoding/gob"
+
 type Modify struct {
 	Data interface{}
 }
@@ -26,21 +28,14 @@ type StorageItem interface {
 	Value() []byte
 }
 
-type StorageIterator interface {
-	Valid() bool
-	Item() StorageItem
-	Next()
-	Seek(key []byte)
-}
-
 type StorageReader interface {
-	GetCF(cf string, key []byte) ([]byte, error)
-	IterCF(cf string) StorageIterator
+	GetCf(cf string, key []byte) []byte
+	NextCf(cf string, key []byte) StorageItem
 }
 
 type Storage interface {
-	Write(batch []Modify) error
-	Reader() (StorageReader, error)
+	Write(batch []Modify)
+	Reader() StorageReader
 }
 
 const (
@@ -48,3 +43,9 @@ const (
 	CFLock    = "LOCK"
 	CFWrite   = "WRITE"
 )
+
+func init() {
+	gob.Register(Put{})
+	gob.Register(Append{})
+	gob.Register(Delete{})
+}

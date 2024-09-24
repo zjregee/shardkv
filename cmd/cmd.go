@@ -30,6 +30,8 @@ var commands = map[string]func(*session, ...string) (string, error){
 	"SET":    Modify,
 	"APPEND": Modify,
 	"DEL":    Modify,
+	"MULTI":  Modify,
+	"EXEC":   Modify,
 }
 
 func repl(session *session) {

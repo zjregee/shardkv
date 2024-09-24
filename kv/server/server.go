@@ -1,15 +1,11 @@
 package server
 
 import (
-	"bytes"
-	"encoding/gob"
-	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	l "github.com/zjregee/shardkv/common/logger"
 	"github.com/zjregee/shardkv/common/storage"
 	"github.com/zjregee/shardkv/common/utils"
 	mvcc "github.com/zjregee/shardkv/kv/transaction"
@@ -20,31 +16,11 @@ import (
 
 const METRICS_TIMEOUT = time.Millisecond * 20
 
-const (
-	OK             = "OK"
-	Duplicate      = "Duplicate"
-	ErrNoKey       = "ErrNoKey"
-	ErrClosed      = "ErrClosed"
-	ErrWrongLeader = "ErrWrongLeader"
-)
-
-type Op struct {
-	Id    int64
-	Kind  string
-	Key   string
-	Value string
-}
-
-type Result struct {
-	Err   pb.Err
-	Value string
-}
-
 type Server struct {
 	mu         sync.Mutex
 	dataIndex  int32
 	data       map[string]string
-	notifyMap  map[int64]chan Result
+	notifyMap  map[int64]chan OperationResult
 	executeMap map[int64]struct{}
 	applyCh    chan raft.ApplyMsg
 	rf         *raft.Raft
@@ -63,7 +39,7 @@ func MakeServer(kv_peers, raft_peers []string, me int32) *Server {
 	kv := &Server{}
 	kv.dataIndex = 0
 	kv.data = make(map[string]string)
-	kv.notifyMap = make(map[int64]chan Result)
+	kv.notifyMap = make(map[int64]chan OperationResult)
 	kv.executeMap = make(map[int64]struct{})
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.MakeRaft(raft_peers, me, kv.applyCh)
@@ -126,8 +102,8 @@ func (kv *Server) run() {
 		kv.mu.Lock()
 		utils.Assert(msg.CommandValid, "commnadValid should be true")
 		utils.Assert(msg.CommandIndex == kv.dataIndex+1, "commandIndex should be equal to dataIndex+1")
-		op := deserializeOp(msg.Command)
-		kv.recordOp(op)
+		op := deserializeOperation(msg.Command)
+		kv.recordOperation(op)
 		kv.applyOperation(op)
 		kv.dataIndex = msg.CommandIndex
 		kv.mu.Unlock()
@@ -138,8 +114,8 @@ func (kv *Server) leaderChangedLoop() {
 	for !kv.killed() {
 		isLeader, _ := kv.state()
 		if !isLeader {
-			result := Result{}
-			result.Err = pb.Err_ErrWrongLeader
+			result := OperationResult{}
+			result.err = pb.Err_ErrWrongLeader
 			kv.mu.Lock()
 			for _, ch := range kv.notifyMap {
 				select {
@@ -151,115 +127,4 @@ func (kv *Server) leaderChangedLoop() {
 		}
 		time.Sleep(METRICS_TIMEOUT)
 	}
-}
-
-func (kv *Server) applyOperation(op Op) {
-	_, needNotify := kv.notifyMap[op.Id]
-	if needNotify {
-		result := Result{}
-		result.Err = pb.Err_OK
-		result.Value = ""
-		if op.Kind == "GET" {
-			_, exists := kv.data[op.Key]
-			if !exists {
-				result.Err = pb.Err_ErrNoKey
-			} else {
-				result.Value = kv.data[op.Key]
-			}
-		} else {
-			_, isInExecute := kv.executeMap[op.Id]
-			if !isInExecute {
-				if op.Kind == "DEL" {
-					delete(kv.data, op.Key)
-				} else if op.Kind == "SET" {
-					kv.data[op.Key] = op.Value
-				} else {
-					_, exists := kv.data[op.Key]
-					if !exists {
-						kv.data[op.Key] = op.Value
-					} else {
-						kv.data[op.Key] += op.Value
-					}
-				}
-				kv.executeMap[op.Id] = struct{}{}
-			} else {
-				result.Err = pb.Err_Duplicate
-			}
-		}
-		ch := kv.notifyMap[op.Id]
-		select {
-		case ch <- result:
-		default:
-		}
-	} else if op.Kind != "Get" {
-		_, isInExecute := kv.executeMap[op.Id]
-		if !isInExecute {
-			if op.Kind == "DEL" {
-				delete(kv.data, op.Key)
-			} else if op.Kind == "SET" {
-				kv.data[op.Key] = op.Value
-			} else {
-				_, exists := kv.data[op.Key]
-				if !exists {
-					kv.data[op.Key] = op.Value
-				} else {
-					kv.data[op.Key] += op.Value
-				}
-			}
-			kv.executeMap[op.Id] = struct{}{}
-		}
-	}
-}
-
-func (kv *Server) submitOp(op Op) (pb.Err, string) {
-	entry := serializeOp(op)
-	kv.rf.Start(entry)
-	ch := make(chan Result)
-	kv.notifyMap[op.Id] = ch
-	kv.mu.Unlock()
-	var result Result
-	dead := false
-	select {
-	case result = <-ch:
-	case <-kv.deadCh:
-		dead = true
-	}
-	kv.mu.Lock()
-	close(ch)
-	delete(kv.notifyMap, op.Id)
-	if dead {
-		return pb.Err_ErrClosed, ""
-	}
-	return result.Err, result.Value
-}
-
-func (kv *Server) recordOp(op Op) {
-	var record string
-	if op.Kind == "GET" || op.Kind == "DEL" {
-		record = fmt.Sprintf("%s(id: %d, key: %s)", op.Kind, op.Id, op.Key)
-	} else {
-		record = fmt.Sprintf("%s(id: %d, key: %s, value: %s)", op.Kind, op.Id, op.Key, op.Value)
-	}
-	l.Log.Infof("[node %d] apply operation: %s", kv.me, record)
-}
-
-func serializeOp(op Op) []byte {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(op)
-	if err != nil {
-		panic(err)
-	}
-	return buf.Bytes()
-}
-
-func deserializeOp(data []byte) Op {
-	var op Op
-	buf := bytes.NewBuffer(data)
-	dec := gob.NewDecoder(buf)
-	err := dec.Decode(&op)
-	if err != nil {
-		panic(err)
-	}
-	return op
 }

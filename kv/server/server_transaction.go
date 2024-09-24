@@ -20,11 +20,9 @@ func (kv *Server) HandleTxnGet(_ context.Context, args *pb.TxnGetArgs) (reply *p
 		reply.LeaderIndex = leaderIndex
 		return
 	}
-	reader, err := kv.storage.Reader()
-	utils.Assert(err == nil, "err should be nil")
+	reader := kv.storage.Reader()
 	txn := mvcc.NewMvccTxn(reader, args.StartTs)
-	value, err := txn.GetValue(args.Key)
-	utils.Assert(err == nil, "err should be nil")
+	value := txn.GetValue(args.Key)
 	reply.Value = value
 	return
 }
@@ -41,12 +39,10 @@ func (kv *Server) HandleTxnPrewrite(_ context.Context, args *pb.TxnPrewriteArgs)
 		reply.LeaderIndex = leaderIndex
 		return
 	}
-	reader, err := kv.storage.Reader()
-	utils.Assert(err == nil, "err should be nil")
+	reader := kv.storage.Reader()
 	txn := mvcc.NewMvccTxn(reader, args.StartTs)
 	for _, m := range args.Mutations {
-		w, ts, err := txn.MostRecentWrite(m.Key)
-		utils.Assert(err == nil, "err should be nil")
+		w, ts := txn.MostRecentWrite(m.Key)
 		if w != nil && ts > args.StartTs {
 			reply.Err = pb.Err_ErrConflict
 			return
@@ -75,8 +71,7 @@ func (kv *Server) HandleTxnPrewrite(_ context.Context, args *pb.TxnPrewriteArgs)
 		}
 		txn.PutLock(m.Key, lock)
 	}
-	err = kv.storage.Write(txn.Writes)
-	utils.Assert(err == nil, "err should be nil")
+	kv.storage.Write(txn.Writes)
 	return
 }
 
@@ -92,8 +87,7 @@ func (kv *Server) HandleTxnCommit(_ context.Context, args *pb.TxnCommitArgs) (re
 		reply.LeaderIndex = leaderIndex
 		return
 	}
-	reader, err := kv.storage.Reader()
-	utils.Assert(err == nil, "err should be nil")
+	reader := kv.storage.Reader()
 	txn := mvcc.NewMvccTxn(reader, args.StartTs)
 	kv.latches.WaitForLatches(args.Keys)
 	defer kv.latches.ReleaseLatches(args.Keys)
@@ -108,8 +102,7 @@ func (kv *Server) HandleTxnCommit(_ context.Context, args *pb.TxnCommitArgs) (re
 		txn.DeleteLock(key)
 		txn.PutWrite(key, args.CommitTs, write)
 	}
-	err = kv.storage.Write(txn.Writes)
-	utils.Assert(err == nil, "err should be nil")
+	kv.storage.Write(txn.Writes)
 	return
 }
 
@@ -125,14 +118,12 @@ func (kv *Server) HandleTxnRollback(_ context.Context, args *pb.TxnRollbackArgs)
 		reply.LeaderIndex = leaderIndex
 		return
 	}
-	reader, err := kv.storage.Reader()
-	utils.Assert(err == nil, "err should be nil")
+	reader := kv.storage.Reader()
 	txn := mvcc.NewMvccTxn(reader, args.StartTs)
 	kv.latches.WaitForLatches(args.Keys)
 	defer kv.latches.ReleaseLatches(args.Keys)
 	for _, key := range args.Keys {
-		write, _, err := txn.CurrentWrite(key)
-		utils.Assert(err == nil, "err should be nil")
+		write, _ := txn.CurrentWrite(key)
 		if write != nil && write.Kind == mvcc.WriteKindRollback {
 			continue
 		}
@@ -143,8 +134,7 @@ func (kv *Server) HandleTxnRollback(_ context.Context, args *pb.TxnRollbackArgs)
 		txn.DeleteLock(key)
 		txn.DeleteValue(key)
 	}
-	err = kv.storage.Write(txn.Writes)
-	utils.Assert(err == nil, "err should be nil")
+	kv.storage.Write(txn.Writes)
 	return
 }
 
@@ -160,11 +150,9 @@ func (kv *Server) HandleTxnCheckStatus(_ context.Context, args *pb.TxnCheckStatu
 		reply.LeaderIndex = leaderIndex
 		return
 	}
-	reader, err := kv.storage.Reader()
-	utils.Assert(err == nil, "err should be nil")
+	reader := kv.storage.Reader()
 	txn := mvcc.NewMvccTxn(reader, args.StartTs)
-	write, _, err := txn.CurrentWrite(args.PrimaryKey)
-	utils.Assert(err == nil, "err should be nil")
+	write, _ := txn.CurrentWrite(args.PrimaryKey)
 	if write != nil {
 		if write.Kind != mvcc.WriteKindRollback {
 			reply.LockStatus = pb.LockStatus_Commited
